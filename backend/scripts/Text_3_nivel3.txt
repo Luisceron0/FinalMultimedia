@@ -1,0 +1,76 @@
+import bpy
+import os
+import json
+from mathutils import Vector
+
+# -------- Configuraciones --------
+nivel = 3  # 🔵 NIVEL 3 - Castillo medieval (toycar3)
+
+# Rutas base del proyecto
+base_path = r"c:\Users\labinf2.pasto\Downloads\juego_3d-miedo-main\juego_3d-miedo-main\game-project\public"
+
+export_path = os.path.join(base_path, "models", "toycar3")
+json_path = os.path.join(base_path, "models", "toycar3", f"toy_car_blocks{nivel}.json")
+os.makedirs(export_path, exist_ok=True)
+
+print(f"📁 Exportando al nivel {nivel} en carpeta: toycar3")
+print(f"📂 Ruta completa: {export_path}")
+
+positions = []
+
+# Configuración de Blender
+depsgraph = bpy.context.evaluated_depsgraph_get()
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.context.view_layer.update()
+
+# -------- Recorrer objetos seleccionados --------
+for obj in bpy.context.selected_objects:
+    if obj.type != 'MESH':
+        continue
+
+    obj_eval = obj.evaluated_get(depsgraph)
+    matrix_world = obj_eval.matrix_world
+    loc = matrix_world.to_translation()
+
+    # 🔵 Normalizar el nombre - Limpiar caracteres especiales
+    name = obj.name.lower().replace(" ", "_").replace(f"_lev{nivel}", "")
+    # Limpiar caracteres inválidos para Windows
+    name = name.replace(":", "_").replace("/", "_").replace("\\", "_")
+    name = name.replace("*", "_").replace("?", "_").replace('"', "_")
+    name = name.replace("<", "_").replace(">", "_").replace("|", "_")
+
+    # 🔵 Asignar nuevo nombre con nivel
+    name_with_level = f"{name}_lev{nivel}"
+    obj.name = name_with_level
+
+    # 🔵 Conversión de coordenadas para Three.js
+    pos = {
+        "name": obj.name,       # Nombre ya corregido
+        "x": loc.x,              # X real
+        "y": loc.z,              # Z de Blender pasa a Y en Three.js
+        "z": -loc.y,             # Invertir Y de Blender para ser Z en Three.js
+        "level": nivel,
+        "role": "default"        # Permitira definir objetos con roles especiales
+    }
+
+    positions.append(pos)
+    print(f"📦 {obj.name}: ({pos['x']}, {pos['y']}, {pos['z']}, nivel {pos['level']})")
+
+    # -------- Exportar modelo individual --------
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+
+    filepath = os.path.join(export_path, f"{obj.name}.glb")
+    bpy.ops.export_scene.gltf(
+        filepath=filepath,
+        use_selection=True,
+        export_format='GLB',
+        export_apply=False
+    )
+
+# -------- Guardar archivo JSON --------
+with open(json_path, "w") as f:
+    json.dump(positions, f, indent=4)
+
+print("✅ Exportación finalizada con sistema de coordenadas compatible con Three.js.")
