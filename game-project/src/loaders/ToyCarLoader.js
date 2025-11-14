@@ -4,271 +4,218 @@ import { createBoxShapeFromModel, createTrimeshShapeFromModel } from '../Experie
 import Prize from '../Experience/World/Prize.js';
 
 export default class ToyCarLoader {
+    constructor(experience, { onChestCollect, robotRef } = {}) {
+        this.experience = experience;
+        this.scene = this.experience.scene;
+        this.resources = this.experience.resources;
+        this.physics = this.experience.physics;
+        this.prizes = [];
+        this.onChestCollect = onChestCollect;
+        this.robotRef = robotRef;
+        this._missingModelsLog = [];
+    }
 
-    constructor(experience, { onChestCollect, robotRef } = {}) {
-        this.experience = experience;
-        this.scene = this.experience.scene;
-        this.resources = this.experience.resources;
-        this.physics = this.experience.physics;
-        this.prizes = [];
-        this.onChestCollect = onChestCollect; 
-        this.robotRef = robotRef; 
-    }
+    /**
+     * Aplica una textura a los meshes que cumplan el matcher.
+     * options: { rotation, center:{x,y}, mirrorX }
+     */
+    _applyTextureToMeshes(root, imagePath, matcher, options = {}) {
+        const matchedMeshes = [];
+        const tex = new THREE.TextureLoader().load(imagePath);
+        if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace; else tex.encoding = THREE.sRGBEncoding;
+        tex.flipY = false;
+        root.traverse(child => {
+            if (child.isMesh && (!matcher || matcher(child))) {
+                matchedMeshes.push(child);
+                child.material = new THREE.MeshBasicMaterial({ map: tex });
+                if (options.rotation || options.center || options.mirrorX) {
+                    child.material.map.center.set(options.center?.x || 0.5, options.center?.y || 0.5);
+                    child.material.map.rotation = options.rotation || 0;
+                    if (options.mirrorX) child.material.map.repeat.x = -1;
+                    child.material.map.needsUpdate = true;
+                }
+            }
+        });
+        return matchedMeshes;
+    }
 
-    _applyTextureToMeshes(root, imagePath, matcher, options = {}) {
-        const matchedMeshes = [];
-        root.traverse((child) => {
-            if (child.isMesh && (!matcher || matcher(child))) {
-                matchedMeshes.push(child);
-            }
-        });
-        if (matchedMeshes.length === 0) {
-            return;
-        }
-        const textureLoader = new THREE.TextureLoader();
-        textureLoader.load(
-            imagePath,
-            (texture) => {
-                if ('colorSpace' in texture) {
-                    texture.colorSpace = THREE.SRGBColorSpace;
-                } else {
-                    texture.encoding = THREE.sRGBEncoding;
-                }
-                texture.flipY = false;
-                const wrapS = options.wrapS || THREE.ClampToEdgeWrapping;
-                const wrapT = options.wrapT || THREE.ClampToEdgeWrapping;
-                texture.wrapS = wrapS;
-                texture.wrapT = wrapT;
-                const maxAniso = this.experience?.renderer?.instance?.capabilities?.getMaxAnisotropy?.();
-                if (typeof maxAniso === 'number' && maxAniso > 0) {
-                    texture.anisotropy = maxAniso;
-                }
-                const center = options.center || { x: 0.5, y: 0.5 };
-                texture.center.set(center.x, center.y);
-                if (typeof options.rotation === 'number') {
-                    texture.rotation = options.rotation;
-                }
-                if (options.repeat) {
-                    texture.repeat.set(options.repeat.x || 1, options.repeat.y || 1);
-                }
-                if (options.mirrorX) {
-                    texture.wrapS = THREE.RepeatWrapping;
-                    texture.repeat.x = -Math.abs(texture.repeat.x || 1);
-                    texture.offset.x = 1;
-                }
-                if (options.mirrorY) {
-                    texture.wrapT = THREE.RepeatWrapping;
-                    texture.repeat.y = -Math.abs(texture.repeat.y || 1);
-                    texture.offset.y = 1;
-                }
-                if (options.offset) {
-                    texture.offset.set(
-                        options.offset.x ?? texture.offset.x,
-                        options.offset.y ?? texture.offset.y
-                    );
-                }
-                texture.needsUpdate = true;
+    /**
+     * Carga bloques desde la API (o fallback local) para un nivel.
+     */
+    async loadFromAPI(level = 1) {
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const apiUrl = `${backendUrl}/api/blocks?level=${level}`;
+        let data;
+        try {
+            const res = await fetch(apiUrl);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const ct = res.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) throw new Error('Respuesta no JSON');
+            data = await res.json();
+            if (!data.blocks || data.blocks.length === 0) throw new Error('API vacía');
+        } catch (e) {
+            console.warn(`ToyCarLoader.loadFromAPI: fallo API (${e.message}) -> fallback local`);
+            const publicPath = (p) => {
+                const base = import.meta.env.BASE_URL || '/';
+                return `${base.replace(/\/$/, '')}/${p.replace(/^\//, '')}`;
+            };
+            const localUrl = publicPath('data/toy_car_blocks.json');
+            const localRes = await fetch(localUrl);
+            if (!localRes.ok) throw new Error(`Fallback local también falló (${localRes.status})`);
+            const allBlocks = await localRes.json();
+            const filtered = allBlocks.filter(b => b.level == level);
+            data = { blocks: filtered, spawnPoint: filtered.find(b => b.role === 'spawnPoint') };
+        }
 
-                let applied = 0;
-                matchedMeshes.forEach((child) => {
-                    if (Array.isArray(child.material)) {
-                        child.material.forEach((mat) => {
-                            mat.map = texture;
-                            mat.needsUpdate = true;
-                        });
-                    } else if (child.material) {
-                        child.material.map = texture;
-                        child.material.needsUpdate = true;
-                    } else {
-                        child.material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
-                    }
-                    applied++;
-                });
+        // Precise physics models
+        let preciseModels = [];
+        try {
+            const publicPath = (p) => {
+                const base = import.meta.env.BASE_URL || '/';
+                return `${base.replace(/\/$/, '')}/${p.replace(/^\//, '')}`;
+            };
+            const preciseUrl = publicPath('config/precisePhysicsModels.json');
+            const r = await fetch(preciseUrl);
+            if (r.ok) preciseModels = await r.json();
+        } catch (e) {
+            console.warn('No se pudo cargar precisePhysicsModels.json', e);
+        }
 
-                if (applied === 0) {
-                    // console.debug(`Sin meshes para aplicar textura: ${imagePath}`);
-                } else {
-                    console.log(`🖼️ Textura aplicada (${imagePath}) a ${applied} mesh(es)`);
-                }
-            },
-            undefined,
-            (err) => {
-                console.error('❌ Error cargando textura', imagePath, err);
-            }
-        );
-    }
+        this._processBlocks(data.blocks || [], preciseModels);
+        return data;
+    }
 
-    async loadFromAPI() {
-        try {
-            const listRes = await fetch('/config/precisePhysicsModels.json');
-            const precisePhysicsModels = await listRes.json();
-            let blocks = [];
-            try {
-                const apiUrl = import.meta.env.VITE_API_URL + '/api/blocks';
-                const res = await fetch(apiUrl);
-                if (!res.ok) throw new Error('Conexión fallida');
-                blocks = await res.json();
-                console.log('Datos cargados desde la API:', blocks.length);
-            } catch (apiError) {
-                console.warn('No se pudo conectar con la API. Cargando desde archivo local...');
-                const localRes = await fetch('/data/toy_car_blocks.json');
-                const allBlocks = await localRes.json();
-                blocks = allBlocks.filter(b => b.level === 1);
-E-              console.log(`Datos cargados desde archivo local (nivel 1): ${blocks.length}`);
-            }
-            this._processBlocks(blocks, precisePhysicsModels);
-        } catch (err) {
-            console.error('Error al cargar bloques o lista Trimesh:', err);
-        }
-    }
+    /**
+     * Busca un modelo en resources por nombre exacto o coincidencia parcial
+     */
+    _findModel(blockName) {
+        // Intento 1: Búsqueda exacta
+        if (this.resources?.items?.[blockName]) {
+            return this.resources.items[blockName];
+        }
 
-    async loadFromURL(apiUrl) {
-        try {
-            const listRes = await fetch('/config/precisePhysicsModels.json');
-            const precisePhysicsModels = await listRes.json();
-            const res = await fetch(apiUrl);
-            if (!res.ok) throw new Error('Conexión fallida al cargar bloques de nivel.');
-            const blocks = await res.json();
-            console.log(`📦 Bloques cargados (${blocks.length}) desde ${apiUrl}`);
-            this._processBlocks(blocks, precisePhysicsModels);
-        } catch (err) {
-            console.error('Error al cargar bloques desde URL:', err);
-        }
-    }
+        // Intento 2: Buscar cualquier modelo que contenga el nombre base sin sufijo de nivel
+        const baseName = blockName.replace(/_lev\d+$/, ''); // Quitar _lev1, _lev2, _lev3
+        
+        for (const key in this.resources.items) {
+            // Coincidir si el key contiene el nombre base
+            if (key.includes(baseName) && key.includes(blockName.match(/_lev\d+$/)?.[0] || '')) {
+                return this.resources.items[key];
+            }
+        }
 
-    _processBlocks(blocks, precisePhysicsModels) {
-        blocks.forEach(block => {
-            if (!block.name) {
-                console.warn('Bloque sin nombre:', block);
-                return;
-            }
+        // Intento 3: Buscar solo por sufijo de nivel
+        const levelSuffix = blockName.match(/_lev\d+$/)?.[0];
+        if (levelSuffix) {
+            for (const key in this.resources.items) {
+                if (key.endsWith(`${baseName}${levelSuffix}`) || key.includes(baseName)) {
+                    return this.resources.items[key];
+                }
+            }
+        }
 
-            const resourceKey = block.name;
-            const glb = this.resources.items[resourceKey];
+        return null;
+    }
 
-            if (!glb) {
-                console.warn(`Modelo no encontrado: ${resourceKey}`);
-                return;
-            }
+    /**
+     * Procesa bloques: clona modelos, aplica escala, crea físicas y premios.
+     */
+    _processBlocks(blocks, precisePhysicsModels = []) {
+        blocks.forEach(block => {
+            if (!block?.name) { console.warn('Bloque sin nombre:', block); return; }
+            const glb = this._findModel(block.name);
+            if (!glb) { console.warn(`Modelo no encontrado: ${block.name}`); this._missingModelsLog.push(block.name); return; }
 
-		const model = glb.scene.clone();
-		model.userData.levelObject = true;
+            const model = glb.scene.clone();
+            model.userData.levelObject = true;
 
-		// 📏 ESCALAR NIVEL 1 x20 para que coincida mejor con el tamaño del robot
-		const levelScale = (block.level === 1) ? 20 : 1;
-		if (levelScale !== 1) {
-			model.scale.set(levelScale, levelScale, levelScale);
-			// Escalar también la posición del modelo
-			model.position.set(
-				block.x * levelScale,
-				block.y * levelScale,
-				block.z * levelScale
-			);
-		} else {
-			model.position.set(block.x, block.y, block.z);
-		}
+            // Escala por nivel (solo nivel 1 *20)
+            const levelScale = (block.level === 1) ? 20 : 1;
+            model.scale.set(levelScale, levelScale, levelScale);
+            model.position.set(block.x * levelScale, block.y * levelScale, block.z * levelScale);
 
-		// Eliminar cámaras y luces embebidas
-		model.traverse((child) => {
-			if (child.isCamera || child.isLight) {
-				child.parent.remove(child);
-			}
-		});            // (Lógica de texturas y 'baked' se queda igual)
-            this._applyTextureToMeshes(
-                model,
-                '/textures/ima1.jpg',
-                (child) => child.name === 'Cylinder001' || (child.name && child.name.toLowerCase().includes('cylinder')),
-                { rotation: -Math.PI / 2, center: { x: 0.5, y: 0.5 }, mirrorX: true }
-            );
-            if (block.name.includes('baked')) {
-                const bakedTexture = new THREE.TextureLoader().load('/textures/baked.jpg');
-                bakedTexture.flipY = false;
-                if ('colorSpace' in bakedTexture) {
-                    bakedTexture.colorSpace = THREE.SRGBColorSpace;
-                } else {
-                    bakedTexture.encoding = THREE.sRGBEncoding;
-                }
-                model.traverse(child => {
-                   if (child.isMesh) {
-                        child.material = new THREE.MeshBasicMaterial({ map: bakedTexture });
-                        child.material.needsUpdate = true;
-                        if (child.name.toLowerCase().includes('portal')) {
-                            this.experience.time.on('tick', () => {
-                                child.rotation.y += 0.01;
-                            });
-                        }
-                    }
-                });
-            }
-            // --- FIN LÓGICA 'baked' ---
+            // Eliminar cámaras / luces internas
+            model.traverse(child => { if (child.isCamera || child.isLight) child.parent?.remove(child); });
 
+            // Texturas especiales (cylinder)
+            this._applyTextureToMeshes(
+                model,
+                '/textures/ima1.jpg',
+                (child) => child.name === 'Cylinder001' || (child.name && child.name.toLowerCase().includes('cylinder')),
+                { rotation: -Math.PI / 2, center: { x: 0.5, y: 0.5 }, mirrorX: true }
+            );
 
-            // Si es un premio (coin)
-            if (block.name.startsWith('coin')) {
-                const prize = new Prize({
-                    model, 
-                    position: new THREE.Vector3(block.x * ((block.level === 1) ? 20 : 1), block.y * ((block.level === 1) ? 20 : 1), block.z * ((block.level === 1) ? 20 : 1)),
-                    scene: this.scene,
-                    role: block.role || "default",
-                    robotRef: this.robotRef 
-                });
-                prize.model.userData.levelObject = true;
-             this.prizes.push(prize);
-                return; // <-- Salir para no crear física estática
-            }
+            // Baked portal
+            if (block.name.includes('baked')) {
+                const bakedTexture = new THREE.TextureLoader().load('/textures/baked.jpg');
+                bakedTexture.flipY = false;
+                if ('colorSpace' in bakedTexture) bakedTexture.colorSpace = THREE.SRGBColorSpace; else bakedTexture.encoding = THREE.sRGBEncoding;
+                model.traverse(child => {
+                    if (child.isMesh) {
+                        child.material = new THREE.MeshBasicMaterial({ map: bakedTexture });
+                        child.material.needsUpdate = true;
+                        if (child.name.toLowerCase().includes('portal')) {
+                            this.experience.time.on('tick', () => { child.rotation.y += 0.01; });
+                        }
+                    }
+                });
+            }
 
+            // Premio (coin)
+            if (block.name.startsWith('coin')) {
+                const prize = new Prize({
+                    model,
+                    position: new THREE.Vector3(model.position.x, model.position.y, model.position.z),
+                    scene: this.scene,
+                    role: block.role || 'default',
+                    robotRef: this.robotRef
+                });
+                prize.model.userData.levelObject = true;
+                this.prizes.push(prize);
+                return; // no física estática
+            }
 
-            // ❌ Cofres removidos - solo monedas en los 3 niveles
-            // Los cofres ya no se usan en el juego
+            // Bloque estático
+            this.scene.add(model);
+            let shape;
+            let position = new THREE.Vector3();
 
-
-            // Si NO es 'coin', entonces es un bloque estático
-            this.scene.add(model);            // Físicas (Solo para bloques estáticos)
-            let shape;
-            let position = new THREE.Vector3();
-
-            if (precisePhysicsModels.includes(block.name)) {
-                shape = createTrimeshShapeFromModel(model);
-                if (!shape) {
-                    console.warn(`No se pudo crear Trimesh para ${block.name}`);
-                    return;
-                }
-                position.set(0, 0, 0);
-            } else {
-                shape = createBoxShapeFromModel(model, 0.9);
+            if (precisePhysicsModels.includes(block.name)) {
+                shape = createTrimeshShapeFromModel(model);
+                if (!shape) console.warn(`No se pudo crear Trimesh para ${block.name}, usando BoxShape fallback.`);
+                position.set(0, 0, 0);
+            }
+            if (!shape) {
+                shape = createBoxShapeFromModel(model, 0.9);
                 const bbox = new THREE.Box3().setFromObject(model);
                 const center = new THREE.Vector3();
                 const size = new THREE.Vector3();
-          bbox.getCenter(center);
+                bbox.getCenter(center);
                 bbox.getSize(size);
-                center.y -= size.y / 2;
+                center.y -= size.y / 2; // apoyar en el suelo
                 position.copy(center);
             }
 
-            // 📦 Escalar físicas para nivel 1 (modelos escalados x20)
-            const physicsScale = (block.level === 1) ? 20 : 1;
-            if (physicsScale !== 1 && shape) {
-                // Escalar la forma de colisión
-                if (shape.halfExtents) {
-                    shape.halfExtents.x *= physicsScale;
-                    shape.halfExtents.y *= physicsScale;
-                    shape.halfExtents.z *= physicsScale;
-                }
-                // Escalar posición
-                position.multiplyScalar(physicsScale);
-            }
-
             const body = new CANNON.Body({
-               mass: 0,
-                shape: shape,
+                mass: 0,
+                shape,
                 position: new CANNON.Vec3(position.x, position.y, position.z),
-               material: this.physics.obstacleMaterial
-            });            body.userData = { levelObject: true };
-            model.userData.physicsBody = body;
-            body.userData.linkedModel = model;
-            this.physics.world.addBody(body);
-     });
-    }
+                material: this.physics.obstacleMaterial
+            });
+            body.userData = { levelObject: true };
+            model.userData.physicsBody = body;
+            body.userData.linkedModel = model;
+            this.physics.world.addBody(body);
+        });
+
+        // Resumen modelos faltantes (únicos)
+        if (this._missingModelsLog.length) {
+            const unique = [...new Set(this._missingModelsLog)];
+            console.warn(`⚠️ Modelos faltantes (${unique.length}):`, unique.slice(0, 25), unique.length > 25 ? `... (+${unique.length - 25} más)` : '');
+        } else {
+            console.log('✅ Todos los modelos solicitados presentes en resources.');
+        }
+    }
 }
 
 

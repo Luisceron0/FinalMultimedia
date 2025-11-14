@@ -2,14 +2,32 @@ const fs = require('fs');
 const path = require('path');
 
 // 📂 Rutas
-const jsonPath = path.join(__dirname, '..', '..', 'game-project', 'public', 'models', 'toycar', 'toy_car_blocks1.json');
+const toycar1Folder = path.join(__dirname, '..', '..', 'game-project', 'public', 'models', 'toycar');
+const toycar2Folder = path.join(__dirname, '..', '..', 'game-project', 'public', 'models', 'toycar2');
+const toycar3Folder = path.join(__dirname, '..', '..', 'game-project', 'public', 'models', 'toycar3');
 const sourcesPath = path.join(__dirname, '..', '..', 'game-project', 'src', 'Experience', 'sources.js');
 
-console.log('🔧 Sincronizando sources.js con toy_car_blocks1.json...\n');
+console.log('🔧 Sincronizando sources.js con archivos GLB reales...\n');
 
-// 📖 Leer JSON de nivel 1
-const blocksData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-console.log(`✅ ${blocksData.length} bloques encontrados en toy_car_blocks1.json\n`);
+// 📖 Leer archivos .glb de cada carpeta
+const getGlbFiles = (folderPath, folderName) => {
+    if (!fs.existsSync(folderPath)) return [];
+    return fs.readdirSync(folderPath)
+        .filter(file => file.endsWith('.glb'))
+        .map(file => ({
+            name: file.replace('.glb', ''),
+            folder: folderName,
+            file: file
+        }));
+};
+
+const level1Files = getGlbFiles(toycar1Folder, 'toycar');
+const level2Files = getGlbFiles(toycar2Folder, 'toycar2');
+const level3Files = getGlbFiles(toycar3Folder, 'toycar3');
+
+console.log(`✅ Nivel 1 (toycar): ${level1Files.length} archivos .glb`);
+console.log(`✅ Nivel 2 (toycar2): ${level2Files.length} archivos .glb`);
+console.log(`✅ Nivel 3 (toycar3): ${level3Files.length} archivos .glb\n`);
 
 // 📖 Leer sources.js actual
 const sourcesContent = fs.readFileSync(sourcesPath, 'utf8');
@@ -33,12 +51,14 @@ for (const match of textureMatches) {
 
 console.log(`🎨 ${textures.length} texturas preservadas\n`);
 
-// 🚗 Construir array de modelos SOLO de nivel 1
-const models = blocksData.map(block => {
-    return `    {\n        "name": "${block.name}",\n        "type": "gltfModel",\n        "path": "/models/toycar/${block.name}.glb"\n    }`;
+// 🚗 Construir modelos desde archivos reales
+const allFiles = [...level1Files, ...level2Files, ...level3Files];
+
+const models = allFiles.sort((a, b) => a.name.localeCompare(b.name)).map(fileInfo => {
+    return `    {\n        "name": "${fileInfo.name}",\n        "type": "gltfModel",\n        "path": "/models/${fileInfo.folder}/${fileInfo.file}"\n    }`;
 });
 
-console.log(`📦 ${models.length} modelos de nivel 1 agregados\n`);
+console.log(`📦 ${models.length} modelos desde archivos físicos\n`);
 
 // 🔨 Construir sources.js completo
 const newSources = `export default [\n${textures.join(',\n')},\n${models.join(',\n')}\n]\n`;
@@ -53,4 +73,4 @@ fs.writeFileSync(sourcesPath, newSources);
 console.log('✅ sources.js actualizado exitosamente!');
 console.log(`📊 Total recursos: ${textures.length + models.length}`);
 console.log(`   - Texturas: ${textures.length}`);
-console.log(`   - Modelos nivel 1: ${models.length}`);
+console.log(`   - Modelos: ${models.length}`);
