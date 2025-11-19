@@ -480,7 +480,7 @@ export default class World {
         if (window.userInteracted && this.loseSound) this.loseSound.play()
         const firstEnemy = this.enemies?.[0]
         const enemyMesh = firstEnemy?.model || firstEnemy?.group
-        if (enemyMesh) { enemyMesh.scale.set(1.3,1.3,1.3); setTimeout(() => enemyMesh.scale.set(1,1,1),500) }
+        if (enemyMesh) { enemyMesh.scale.set(4.3,4.3,4.3); setTimeout(() => enemyMesh.scale.set(1,1,1),500) }
         this.experience.modal.show({
           icon: '💀',
           message: '¡El enemigo te atrapó!\n¿Quieres intentarlo otra vez?',
@@ -662,7 +662,7 @@ export default class World {
       // Determinar Spawn Point específico por nivel si no está en JSON
       let defaultSpawn = { x: 0, y: 1.5, z: 0 };
       if (level == 1) defaultSpawn = { x: -17, y: 1.5, z: -67 };
-      else if (level == 2) defaultSpawn = { x: 5, y: 1.5, z: 5 };
+      else if (level == 2) defaultSpawn = { x: -50, y: 1.5, z: -3.50 };
       else if (level == 3) defaultSpawn = { x: 10, y: 1.5, z: 10 }; // Define un spawn para Nivel 3
       const spawnPoint = data.spawnPoint || defaultSpawn;
 

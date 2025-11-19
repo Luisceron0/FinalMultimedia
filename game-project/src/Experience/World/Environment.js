@@ -13,7 +13,7 @@ export default class Environment {
         }
 
         // Por defecto asumimos día; puedes activar la noche llamando this.setNight(true)
-        this.isNight = true // <-- cambia a false si quieres volver al día
+        this.isNight = false // <-- cambia a true si quieres modo noche
 
         this.setSunLight()
         this.setEnvironmentMap()

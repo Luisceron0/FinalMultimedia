@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import EventEmitter from './EventEmitter.js'
 
 export default class Resources extends EventEmitter {
@@ -10,12 +11,6 @@ export default class Resources extends EventEmitter {
         this.items = {}
         this.toLoad = this.sources.length
         this.loaded = 0
-        this.failed = 0
-
-        // 🚀 Configuración de carga por lotes
-        this.batchSize = 10 // Cargar máximo 10 modelos simultáneos
-        this.currentBatch = 0
-        this.queue = [...this.sources]
 
         this.setLoaders()
         this.startLoading()
@@ -23,27 +18,32 @@ export default class Resources extends EventEmitter {
 
     setLoaders() {
         this.loaders = {}
+        
+        // Configurar DRACOLoader
+        const dracoLoader = new DRACOLoader()
+        dracoLoader.setDecoderPath('/draco/')
+        
+        // Configurar GLTFLoader con DRACOLoader y opciones para manejar texturas
         this.loaders.gltfLoader = new GLTFLoader()
-        this.loaders.textureLoader = new THREE.TextureLoader()
-        this.loaders.cubeTextureLoader = new THREE.CubeTextureLoader()
+        this.loaders.gltfLoader.setDRACOLoader(dracoLoader)
+        
+        // Configurar el manager para suprimir warnings de blobs
+        const loadingManager = new THREE.LoadingManager()
+        loadingManager.onError = (url) => {
+            // Solo mostrar error si no es un blob (las texturas embebidas usan blobs)
+            if (!url.includes('blob:')) {
+                console.warn(`Error cargando recurso: ${url}`)
+            }
+        }
+        
+        this.loaders.textureLoader = new THREE.TextureLoader(loadingManager)
+        this.loaders.cubeTextureLoader = new THREE.CubeTextureLoader(loadingManager)
     }
 
     startLoading() {
-        console.log(`🎮 Iniciando carga de ${this.toLoad} recursos en lotes de ${this.batchSize}`);
-        this.loadNextBatch()
-    }
+        for (const source of this.sources) {
+            //console.log(`⏳ Cargando recurso: ${source.name} desde ${source.path}`);
 
-    loadNextBatch() {
-        const batch = this.queue.splice(0, this.batchSize)
-        
-        if (batch.length === 0) {
-            return // No hay más por cargar
-        }
-
-        this.currentBatch++
-        console.log(`📦 Lote ${this.currentBatch}: cargando ${batch.length} recursos...`);
-
-        batch.forEach(source => {
             if (source.type === 'gltfModel') {
                 this.loaders.gltfLoader.load(
                     source.path,
@@ -53,7 +53,7 @@ export default class Resources extends EventEmitter {
                     undefined,
                     (error) => {
                         console.error(`❌ Error al cargar modelo ${source.name} desde ${source.path}`)
-                        this.sourceFailed(source, error)
+                        console.error(error)
                     }
                 )
             } else if (source.type === 'texture') {
@@ -65,7 +65,7 @@ export default class Resources extends EventEmitter {
                     undefined,
                     (error) => {
                         console.error(`❌ Error al cargar textura ${source.name} desde ${source.path}`)
-                        this.sourceFailed(source, error)
+                        console.error(error)
                     }
                 )
             } else if (source.type === 'cubeTexture') {
@@ -77,27 +77,10 @@ export default class Resources extends EventEmitter {
                     undefined,
                     (error) => {
                         console.error(`❌ Error al cargar cubemap ${source.name} desde ${source.path}`)
-                        this.sourceFailed(source, error)
+                        console.error(error)
                     }
                 )
             }
-        })
-    }
-
-    sourceFailed(source, error) {
-        this.failed++
-        this.loaded++ // Contar como "procesado" para avanzar
-
-        const percent = Math.floor((this.loaded / this.toLoad) * 100)
-        window.dispatchEvent(new CustomEvent('resource-progress', { detail: percent }))
-
-        if (this.loaded === this.toLoad) {
-            console.log(`⚠️  Carga completada: ${this.loaded - this.failed} éxitos, ${this.failed} fallos`);
-            window.dispatchEvent(new CustomEvent('resource-complete'))
-            this.trigger('ready')
-        } else if (this.loaded % this.batchSize === 0) {
-            // Cuando termina un lote, cargar el siguiente
-            this.loadNextBatch()
         }
     }
 
@@ -109,12 +92,56 @@ export default class Resources extends EventEmitter {
         window.dispatchEvent(new CustomEvent('resource-progress', { detail: percent }))
 
         if (this.loaded === this.toLoad) {
-            console.log(`✅ Carga completada: ${this.loaded - this.failed}/${this.toLoad} recursos cargados`);
             window.dispatchEvent(new CustomEvent('resource-complete'))
             this.trigger('ready')
-        } else if (this.loaded % this.batchSize === 0) {
-            // Cuando termina un lote, cargar el siguiente
-            this.loadNextBatch()
         }
+    }
+
+    // Cargar recursos adicionales bajo demanda
+    async loadAdditionalSources(sources) {
+        return new Promise((resolve) => {
+            let additionalLoaded = 0;
+            const additionalToLoad = sources.length;
+
+            if (additionalToLoad === 0) {
+                resolve();
+                return;
+            }
+
+            for (const source of sources) {
+                // Saltar si ya está cargado
+                if (this.items[source.name]) {
+                    additionalLoaded++;
+                    if (additionalLoaded === additionalToLoad) {
+                        resolve();
+                    }
+                    continue;
+                }
+
+                if (source.type === 'gltfModel') {
+                    this.loaders.gltfLoader.load(
+                        source.path,
+                        (file) => {
+                            this.items[source.name] = file;
+                            additionalLoaded++;
+                            const percent = Math.floor((additionalLoaded / additionalToLoad) * 100);
+                            window.dispatchEvent(new CustomEvent('level-loading-progress', { detail: percent }));
+                            
+                            if (additionalLoaded === additionalToLoad) {
+                                resolve();
+                            }
+                        },
+                        undefined,
+                        (error) => {
+                            console.error(`❌ Error cargando ${source.name}:`, error);
+                            additionalLoaded++;
+                            if (additionalLoaded === additionalToLoad) {
+                                resolve();
+                            }
+                        }
+                    );
+                }
+            }
+        });
     }
 }

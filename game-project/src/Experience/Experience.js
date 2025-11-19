@@ -203,11 +203,6 @@ export default class Experience {
       this.camera.update()
     }
 
-    // 📷 Actualizar cámara en tercera persona para seguir al jugador
-    if (this.isThirdPerson && this.world?.thirdPersonCamera) {
-      this.world.thirdPersonCamera.update()
-    }
-
     if (this.renderer.instance.xr.isPresenting) {
       this.adjustCameraForVR()
     }

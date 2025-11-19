@@ -39,7 +39,7 @@ export default class Floor {
 
     setMaterial() {
         this.material = new THREE.MeshStandardMaterial({
-            color: 0x8B4513, // Color marrón
+            map: this.textures.color, // Usamos la textura cargada
             roughness: 0.8,
             metalness: 0.1
         })
@@ -47,7 +47,7 @@ export default class Floor {
 
     setMesh() {
         this.mesh = new THREE.Mesh(this.geometry, this.material)
-        this.mesh.position.set(0, -this.size.height / 2, 0)
+        this.mesh.position.set(0, -1, 0) // Bajado para evitar colisión con el mundo
         this.mesh.receiveShadow = true
         this.scene.add(this.mesh)
     }
@@ -64,7 +64,7 @@ export default class Floor {
         this.body = new CANNON.Body({
             mass: 0,
             shape: shape,
-            position: new CANNON.Vec3(0, -this.size.height / 2, 0)
+            position: new CANNON.Vec3(0, -1, 0) // Bajado para evitar colisión con el mundo
         })
 
         this.physics.world.addBody(this.body)

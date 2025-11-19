@@ -11,9 +11,11 @@ import AmbientSound from './AmbientSound.js';
 import MobileControls from '../../controls/MobileControls.js';
 import LevelManager from './LevelManager.js';
 import FinalPrizeParticles from '../Utils/FinalPrizeParticles.js';
+import PortalBeacon from '../Utils/PortalBeacon.js';
 import Enemy from './Enemy.js';
 import Coin from './Coin.js';
 import Prize from './Prize.js';
+import { getSourcesForLevel } from '../sources.js';
 
 export default class World {
 	constructor(experience, { debug = false } = {}) {
@@ -62,15 +64,10 @@ export default class World {
 	 */
 	_updateUI() {
 		if (this.experience.menu?.setStatus) {
-			// Empezar con las monedas (siempre visibles)
-			let status = `🪙 Monedas: ${this.collectedCoins}`;
+			// Mostrar nivel y monedas con meta
+			let status = `🎮 Nivel: ${this.levelManager.currentLevel} | 🪙 Monedas: ${this.collectedCoins} / ${this.coinGoal}`;
 
-			// Añadir cofres si estamos en el nivel 2 o 3
-			if (this.levelManager.currentLevel == 2 || this.levelManager.currentLevel == 3) {
-				status += ` | 📦 Cofres: ${this.collectedChests} / ${this.chestGoal}`;
-			}
-
-			if (this.debug) console.log(`[_updateUI] Nivel actual: ${this.levelManager.currentLevel}, Cofres: ${this.collectedChests}, Monedas: ${this.collectedCoins}`);
+			if (this.debug) console.log(`[_updateUI] Nivel actual: ${this.levelManager.currentLevel}, Monedas: ${this.collectedCoins}/${this.coinGoal}`);
 			this.experience.menu.setStatus(status);
 		}
 	}
@@ -118,7 +115,7 @@ export default class World {
 		try {
 			if (this.debug) console.log('World: resources ready -> initializing world content');
 
-			// ❌ Floor.js eliminado - el suelo se genera desde los modelos del nivel
+			this.floor = new Floor(this.experience); // Plano de colisión para evitar caídas
 			this.environment = new Environment(this.experience);
 
 			// 1. CREAR EL ROBOT PRIMERO
@@ -126,7 +123,6 @@ export default class World {
 
 			// 2. PASAR LA REFERENCIA DEL ROBOT AL LOADER
 			this.loader = new ToyCarLoader(this.experience, {
-				onChestCollect: (chest) => this.handleChestCollect(chest),
 				robotRef: this.robot
 			});
 
@@ -137,8 +133,7 @@ export default class World {
 				try { await this.loader.loadFromAPI() } catch (errApi) { if (this.debug) console.warn('World: ToyCarLoader.loadFromAPI fallo:', errApi) }
 			}
 
-			// ❌ Fox comentado temporalmente hasta agregar zombieModel a sources.js
-			// this.fox = new Fox(this.experience);
+			this.fox = new Fox(this.experience);
 
 			this.experience.vr?.bindCharacter?.(this.robot);
 			this.thirdPersonCamera = new ThirdPersonCamera(this.experience, this.robot.group);
@@ -160,20 +155,17 @@ export default class World {
 		}
 	}
 
-	spawnEnemies(count = 3) {
+	spawnEnemies(count = 3, modelResource = null) {
 		if (!this.robot?.body) { if (this.debug) console.warn('spawnEnemies: robot no listo'); return }
-		const zombieResource = this.resources?.items?.zombieModel;
-		if (!zombieResource) { 
-			if (this.debug) console.warn('spawnEnemies: zombieModel no encontrado - saltando spawn'); 
-			return; 
-		}
+		const zombieResource = modelResource || this.resources?.items?.zombieModel;
+		if (!zombieResource) { console.error('spawnEnemies: modelo de enemigo no encontrado'); return }
 
 		this.enemies?.forEach(e => e?.destroy?.());
 		this.enemies = [];
 
 		const playerPos = this.robot.body.position;
-		const minRadius = 15;
-		const maxRadius = 30;
+		const minRadius = 75; // Escalado x5
+		const maxRadius = 150; // Escalado x5
 		for (let i = 0; i < count; i++) {
 			const angle = Math.random() * Math.PI * 2;
 			const radius = minRadius + Math.random() * (maxRadius - minRadius);
@@ -198,6 +190,73 @@ export default class World {
 		if (this.debug) console.log(`spawnEnemies: se crearon ${this.enemies.length} enemigos`);
 	}
 
+	spawnMixedEnemies(zombieCount = 4, giantCount = 1) {
+		if (!this.robot?.body) { if (this.debug) console.warn('spawnMixedEnemies: robot no listo'); return }
+		const zombieResource = this.resources?.items?.zombieModel;
+		const giantMutantResource = this.resources?.items?.giantMutantModel;
+		if (!zombieResource || !giantMutantResource) { 
+			console.error('spawnMixedEnemies: modelos no encontrados'); 
+			return 
+		}
+
+		this.enemies?.forEach(e => e?.destroy?.());
+		this.enemies = [];
+
+		const playerPos = this.robot.body.position;
+		const minRadius = 30;
+		const maxRadius = 60;
+
+		// Spawnear zombies normales
+		for (let i = 0; i < zombieCount; i++) {
+			const angle = (i / (zombieCount + giantCount)) * Math.PI * 2;
+			const radius = minRadius + Math.random() * (maxRadius - minRadius);
+			const x = playerPos.x + Math.cos(angle) * radius;
+			const z = playerPos.z + Math.sin(angle) * radius;
+			const y = playerPos.y ?? 1.5;
+			const spawnPos = new THREE.Vector3(x, y, z);
+
+			const enemy = new Enemy({
+				scene: this.scene,
+				physicsWorld: this.experience.physics?.world,
+				playerRef: this.robot,
+				model: zombieResource,
+				position: spawnPos,
+				experience: this.experience,
+				debug: this.debug
+			});
+			enemy.isGhost = false;
+			enemy.delayActivation = 0.5 + i * 0.3;
+			this.enemies.push(enemy);
+		}
+
+		// Spawnear giant mutants (3x más grandes)
+		for (let i = 0; i < giantCount; i++) {
+			const angle = ((zombieCount + i) / (zombieCount + giantCount)) * Math.PI * 2;
+			const radius = minRadius + Math.random() * (maxRadius - minRadius);
+			const x = playerPos.x + Math.cos(angle) * radius;
+			const z = playerPos.z + Math.sin(angle) * radius;
+			const y = (playerPos.y ?? 1.5) + 7.0; // +3.0 más alto para evitar que atraviese el suelo
+			const spawnPos = new THREE.Vector3(x, y, z);
+
+			const enemy = new Enemy({
+				scene: this.scene,
+				physicsWorld: this.experience.physics?.world,
+				playerRef: this.robot,
+				model: giantMutantResource,
+				position: spawnPos,
+				experience: this.experience,
+				debug: this.debug,
+				scale: 3.0 // 3x más grande que zombie normal
+			});
+			enemy.isGiantMutant = true;
+			enemy.isGhost = false;
+			enemy.delayActivation = 1.0 + i * 0.5;
+			this.enemies.push(enemy);
+		}
+
+		if (this.debug) console.log(`spawnMixedEnemies: ${zombieCount} zombies + ${giantCount} giant mutants creados`);
+	}
+
 	spawnIntelligentEnemies(count, speedMultiplier = 3.6) {
     if (!this.robot?.body) { if (this.debug) console.warn(`spawnIntelligentEnemies: robot no listo`); return }
     const zombieResource = this.resources?.items?.zombieModel;
@@ -207,8 +266,8 @@ export default class World {
     this.enemies = [];
 
     const playerPos = this.robot.body.position;
-    const minRadius = 10; // x2 del original (era 5)
-    const maxRadius = 20; // x2 del original (era 10)
+    const minRadius = 25; // Escalado x5
+    const maxRadius = 50; // Escalado x5
     const defaultSpeed = 5.0; // Define una velocidad base si Enemy.js no la tiene
 
     for (let i = 0; i < count; i++) {
@@ -248,8 +307,8 @@ export default class World {
 
 
 		const playerPos = this.robot.body.position;
-		const minRadius = 25;
-		const maxRadius = 40;
+		const minRadius = 100; // Escalado x5
+		const maxRadius = 200; // Escalado x5
 		const angle = Math.random() * Math.PI * 2;
 		const radius = minRadius + Math.random() * (maxRadius - minRadius);
 		const x = playerPos.x + Math.cos(angle) * radius;
@@ -276,179 +335,88 @@ export default class World {
 	async activateFinalPrize() {
 		if (this.finalPrizeActivated) return;
 		this.finalPrizeActivated = true;
-		this._finalCoinMade = true;
-		if (this.debug) console.log('activateFinalPrize: Creando el PORTAL FINAL cerca del jugador.');
+		this._finalCoinMade = true; // Sigue siendo útil para Nivel 1
+		if (this.debug) console.log('activateFinalPrize: Creando el PORTAL FINAL en el centro.');
+
+		// --- USAR MODELO DE PORTAL ---
+		let prizeModelResource;
+		const portalModelResource = this.resources?.items?.portalModel;
+
+		if (!portalModelResource) {
+			if (this.debug) console.warn('activateFinalPrize: NO SE ENCONTRÓ portalModel. Usando fallback...');
+			prizeModelResource = (this.loader && this.loader.prizes && this.loader.prizes[0] && this.loader.prizes[0].model) || this.resources?.items?.coinModel;
+			if (!prizeModelResource) {
+				 if (this.debug) console.warn('activateFinalPrize: no hay ningún modelo de premio disponible');
+				 return;
+			}
+		} else {
+			 prizeModelResource = portalModelResource;
+			 if(this.debug) console.log('activateFinalPrize: Usando portalModel dedicado.');
+		}
+		// --- FIN: USAR MODELO DE PORTAL ---
 
 		this.finalPrizes = this.finalPrizes || [];
 
-		// CALCULAR POSICIÓN CERCA DEL JUGADOR (en frente, distancia 10)
-		let spawnPos;
-		try {
-			const robotGroup = this.robot?.group;
-			const playerPos = this.robot.body.position.clone();
-			let forward = new THREE.Vector3(0, 0, -1);
-
-			if (robotGroup) {
-				forward.applyQuaternion(robotGroup.quaternion);
-				forward.y = 0;
-				forward.normalize();
-			}
-
-			const distance = 10;
-			spawnPos = playerPos.add(forward.multiplyScalar(distance));
-			spawnPos.y = (this.robot.body.position.y ?? 1.5) + 2; // Elevado 2 unidades
-
-			if (this.debug) console.log(`🚪 Portal spawneado en X=${spawnPos.x.toFixed(2)}, Y=${spawnPos.y.toFixed(2)}, Z=${spawnPos.z.toFixed(2)}`);
-		} catch (e) {
-			if (this.debug) console.warn('Error calculando posición portal, usando fallback cercano', e);
-			spawnPos = new THREE.Vector3(
-				this.robot.body.position.x + 10,
-				(this.robot.body.position.y ?? 1.5) + 2,
-				this.robot.body.position.z
-			);
+		if (!this.finalPrizeLocations || !this.finalPrizeLocations.length) {
+			this.finalPrizeLocations = [{ x: 0, y: 1.5, z: 0 }]; // Ajusta Y si es necesario
 		}
 
-		// 🌀 CREAR PORTAL CIRCULAR CON TEXTURA DE VÓRTICE
-		const portalRadius = 2.5;
-		const portalGeometry = new THREE.TorusGeometry(portalRadius, 0.3, 16, 100);
-		
-		// Canvas para textura de vórtice animada
-		const canvas = document.createElement('canvas');
-		canvas.width = 512;
-		canvas.height = 512;
-		const ctx = canvas.getContext('2d');
-		
-		// Textura base del vórtice
-		const vortexTexture = new THREE.CanvasTexture(canvas);
-		vortexTexture.needsUpdate = true;
-		
-		const vortexMaterial = new THREE.MeshStandardMaterial({
-			map: vortexTexture,
-			color: 0x00ffff,
-			emissive: 0x0088ff,
-			emissiveIntensity: 3.0,
-			metalness: 0.8,
-			roughness: 0.2,
-			transparent: true,
-			opacity: 0.9,
-			side: THREE.DoubleSide
-		});
+		this.finalPrizeLocations.forEach(loc => {
+			const pos = new THREE.Vector3(loc.x, loc.y, loc.z);
+			const prize = new Prize({
+				model: prizeModelResource,
+				position: pos,
+				scene: this.scene,
+				role: 'finalPrize',
+				sound: this.winner,
+				robotRef: this.robot
+			});
 
-		const portalRing = new THREE.Mesh(portalGeometry, vortexMaterial);
-		portalRing.position.copy(spawnPos);
-		// Vertical (parado) - sin rotación en X
-		
-		// Centro del portal (disco interior giratorio)
-		const centerGeometry = new THREE.CircleGeometry(portalRadius * 0.85, 64);
-		const centerMaterial = new THREE.MeshBasicMaterial({
-			color: 0x0099ff,
-			transparent: true,
-			opacity: 0.7,
-			side: THREE.DoubleSide
-		});
-		const portalCenter = new THREE.Mesh(centerGeometry, centerMaterial);
-		portalCenter.position.copy(spawnPos);
-		// Sin rotación - vertical por defecto
-		
-		// Grupo contenedor
-		const portalGroup = new THREE.Group();
-		portalGroup.add(portalRing);
-		portalGroup.add(portalCenter);
-		portalGroup.position.copy(spawnPos);
-		portalGroup.userData.isPortal = true;
-		
-		this.scene.add(portalGroup);
+			if (prize.pivot) prize.pivot.visible = true;
+			this.finalPrizes.push(prize);
 
-		// Animación del vórtice
-		let vortexTime = 0;
-		const animateVortex = () => {
-			vortexTime += 0.02;
-			
-			// Dibujar espiral de vórtice
-			ctx.fillStyle = '#000033';
-			ctx.fillRect(0, 0, 512, 512);
-			
-			const centerX = 256;
-			const centerY = 256;
-			const arms = 5;
-			
-			for (let i = 0; i < arms; i++) {
-				ctx.save();
-				ctx.translate(centerX, centerY);
-				ctx.rotate((vortexTime + i * Math.PI * 2 / arms));
-				
-				const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 256);
-				gradient.addColorStop(0, '#00ffff');
-				gradient.addColorStop(0.3, '#0088ff');
-				gradient.addColorStop(0.6, '#0044ff');
-				gradient.addColorStop(1, 'transparent');
-				
-				ctx.fillStyle = gradient;
-				ctx.beginPath();
-				ctx.moveTo(0, 0);
-				for (let r = 0; r < 256; r += 2) {
-					const angle = r * 0.1;
-					const x = r * Math.cos(angle);
-					const y = r * Math.sin(angle);
-					ctx.lineTo(x, y);
-				}
-				ctx.closePath();
-				ctx.fill();
-				ctx.restore();
-			}
-			
-			vortexTexture.needsUpdate = true;
-			
-			// Rotación del anillo y centro
-			portalRing.rotation.z += 0.01;
-			portalCenter.rotation.z -= 0.02;
-			
-			// Pulso de brillo
-			const pulse = Math.sin(vortexTime * 2) * 0.5 + 2.5;
-			vortexMaterial.emissiveIntensity = pulse;
-		};
-
-		// Agregar al loop de animación
-		this.experience.time.on('tick', animateVortex);
-
-		// Crear objeto Prize para detección de colisión
-		const dummyModel = new THREE.Group();
-		dummyModel.add(portalGroup.clone());
-		
-		const prize = new Prize({
-			model: dummyModel,
-			position: spawnPos,
-			scene: this.scene,
-			role: 'finalPrize',
-			sound: this.winner,
-			robotRef: this.robot
-		});
-
-		// Ocultar el modelo dummy y usar el portal real
-		if (prize.model) prize.model.visible = false;
-		if (prize.pivot) prize.pivot.visible = false;
-		
-		this.finalPrizes.push(prize);
-
-		try {
-			new FinalPrizeParticles({ scene: this.scene, targetPosition: pos, sourcePosition: pos, experience: this.experience });
-		} catch (e) {
-			if (this.debug) console.warn('No se pudo crear FinalPrizeParticles', e);
-		}
-
-		// Lógica para pasar de nivel al recoger el portal
-		prize.onCollect = async (collectedPrize) => {
-			if (this.isLoadingLevel) return;
 			try {
-				if (collectedPrize.role === "finalPrize") {
-					this.isLoadingLevel = true;
-					await this._goToNextLevel();
-					this.isLoadingLevel = false;
-				}
+				new FinalPrizeParticles({ scene: this.scene, targetPosition: pos, sourcePosition: pos, experience: this.experience });
 			} catch (e) {
-				if (this.debug) console.warn('Error en prize.onCollect wrapper (Portal Central)', e);
+				if (this.debug) console.warn('No se pudo crear FinalPrizeParticles', e);
 			}
-		};
+
+			// Crear haz de luz SOLO en el Nivel 1 (mapa grande)
+			if (this.levelManager.currentLevel === 1) {
+				try {
+					this.portalBeacon = new PortalBeacon({
+						scene: this.scene,
+						position: pos,
+						experience: this.experience,
+						color: 0x00ffff // Color cyan brillante
+					});
+					if (this.debug) console.log('✨ Haz de luz del portal creado en Nivel 1');
+				} catch (e) {
+					if (this.debug) console.warn('No se pudo crear PortalBeacon', e);
+				}
+			}
+
+			// Lógica para pasar de nivel al recoger el portal
+			prize.onCollect = async (collectedPrize) => {
+				if (this.isLoadingLevel) return;
+				try {
+					if (collectedPrize.role === "finalPrize") {
+						this.isLoadingLevel = true;
+						
+						// Limpiar el haz de luz cuando se recoge el portal
+						if (this.portalBeacon) {
+							this.portalBeacon.dispose();
+							this.portalBeacon = null;
+						}
+						
+						await this._goToNextLevel();
+						this.isLoadingLevel = false;
+					}
+				} catch (e) {
+					if (this.debug) console.warn('Error en prize.onCollect wrapper (Portal Central)', e);
+				}
+			};
+		});
 
 		if (window.userInteracted && this.portalSound) this.portalSound.play();
 	}
@@ -478,21 +446,19 @@ export default class World {
 
 			if (robotGroup) {
 				forward.applyQuaternion(robotGroup.quaternion);
-				forward.y = 0;
-				forward.normalize();
-			}
-
-			const finalDistance = 12; // <-- Distancia Ajustada
-			spawnPos = playerPos.add(forward.multiplyScalar(finalDistance));
-			spawnPos.y = (this.robot.body.position.y ?? 1.5) + 0.6; // Ajusta Y si es necesario
-
-			if (this.debug) console.log('spawnFinalPrizeNearPlayer: Creando portal en', spawnPos);
-		} catch (e) {
-			if (this.debug) console.warn('Error posicionando portal final cercano, usando fallback', e);
-			spawnPos = new THREE.Vector3(this.robot.body.position.x + 8, (this.robot.body.position.y ?? 1.5) + 0.6, this.robot.body.position.z); // Fallback
+			forward.y = 0;
+			forward.normalize();
 		}
 
-		// 3. Crear el objeto Prize
+		const finalDistance = 5; // Portal justo al lado del jugador
+		spawnPos = playerPos.add(forward.multiplyScalar(finalDistance));
+		spawnPos.y = (this.robot.body.position.y ?? 1.5) + 1; // Portal a la altura del jugador
+
+		if (this.debug) console.log('spawnFinalPrizeNearPlayer: Creando portal en', spawnPos);
+	} catch (e) {
+		if (this.debug) console.warn('Error posicionando portal final cercano, usando fallback', e);
+		spawnPos = new THREE.Vector3(this.robot.body.position.x + 5, (this.robot.body.position.y ?? 1.5) + 1, this.robot.body.position.z); // Fallback portal al lado
+	}		// 3. Crear el objeto Prize
 		const prize = new Prize({
 			model: prizeModelResource,
 			position: spawnPos,
@@ -524,6 +490,7 @@ export default class World {
 		// Lógica para pasar de nivel al recoger el portal
 		prize.onCollect = async (collectedPrize) => {
 			if (this.isLoadingLevel) return;
+			console.log(`🌀 Portal recolectado. Nivel actual: ${this.levelManager?.currentLevel}, Role: ${collectedPrize.role}`);
 			try {
 				if (collectedPrize.role === "finalPrize") {
 					this.isLoadingLevel = true;
@@ -531,7 +498,8 @@ export default class World {
 					this.isLoadingLevel = false;
 				}
 			} catch (e) {
-				if (this.debug) console.warn('Error en prize.onCollect wrapper (Portal Cercano)', e);
+				console.error('❌ Error en prize.onCollect (Portal Cercano):', e);
+				this.isLoadingLevel = false;
 			}
 		};
 	}
@@ -572,30 +540,34 @@ export default class World {
 
 					if (window.userInteracted && this.coinSound) this.coinSound.play();
 					try {
-						this.collectedCoins = (this.collectedCoins || 0) + 1;
-						this._updateUI(); // Actualiza contador
+					this.collectedCoins = (this.collectedCoins || 0) + 1;
+					this._updateUI(); // Actualiza contador
 
-						if (this.debug) console.log('Monedas recogidas:', this.collectedCoins, 'role:', c.role);
-						
-						// Ya no hay monedas 'finalPrize', se elimina la lógica if (role === 'finalPrize')
+					if (this.debug) console.log('Monedas recogidas:', this.collectedCoins, 'role:', c.role);
+					
+					// Ya no hay monedas 'finalPrize', se elimina la lógica if (role === 'finalPrize')
 
-						if (this.levelManager && typeof this.levelManager.onCoinCollected === 'function') {
-							this.levelManager.onCoinCollected(c);
-						}
+				if (this.levelManager && typeof this.levelManager.onCoinCollected === 'function') {
+					this.levelManager.onCoinCollected(c);
+				}
 
-                        // Activación portal por monedas (unificada para todos los niveles)
-                        if (!this.finalPrizeActivated && this.collectedCoins >= this.coinGoal) {
-                            if (this.debug) console.log(`🎯 Meta de ${this.coinGoal} monedas alcanzada. Creando portal final.`);
-                            this.activateFinalPrize();
-                            // Mensaje al jugador
-                            try {
-                                this.experience.modal.show({
-                                    icon: '🚪',
-                                    message: '¡El portal ha aparecido!\nAcércate para avanzar al siguiente nivel.',
-                                    buttons: [ { text: 'OK', onClick: () => {} } ]
-                                });
-                            } catch(e) { if (this.debug) console.warn('No se pudo mostrar modal portal', e); }
-                        }
+				// Crear portal cerca del jugador al alcanzar la décima moneda
+				if (!this._finalCoinMade && this.collectedCoins >= this.coinGoal) {
+					if (this.debug) console.log('Meta de monedas alcanzada -> Creando portal cerca del jugador');
+					
+					// Si estamos en nivel 3, reproducir animación de death en giant_mutants
+					if (this.levelManager?.currentLevel === 3) {
+						this.enemies?.forEach(enemy => {
+							if (enemy.isGiantMutant && typeof enemy.playDeath === 'function') {
+								enemy.playDeath();
+								if (this.debug) console.log('🧟 Giant Mutant ejecutando animación de muerte');
+							}
+						});
+					}
+					
+					this.spawnFinalPrizeNearPlayer(); // <-- Crea el portal cerca del jugador
+					this._finalCoinMade = true;
+				}
 					} catch (e) { if (this.debug) console.warn('onCollect error', e) }
 				}
 			});
@@ -608,66 +580,48 @@ export default class World {
 
 	async _goToNextLevel() {
 		try {
+			console.log(`🎯 _goToNextLevel llamado. Nivel actual: ${this.levelManager.currentLevel}, Total niveles: ${this.levelManager.totalLevels}`);
+			
 			if (this.levelManager && this.levelManager.currentLevel < this.levelManager.totalLevels) {
-				if (this.debug) console.log(`_goToNextLevel: Pasando del nivel ${this.levelManager.currentLevel}...`);
+				const currentLevel = this.levelManager.currentLevel;
+				const nextLevelNum = currentLevel + 1;
+				console.log(`➡️ Pasando del nivel ${currentLevel} al nivel ${nextLevelNum}...`);
 				try {
 					await this.levelManager.nextLevel();
+					console.log(`✅ levelManager actualizado. Nuevo nivel: ${this.levelManager.currentLevel}`);
+					await this.loadLevel(nextLevelNum);
+					console.log(`✅ loadLevel(${nextLevelNum}) completado.`);
 				} catch (e) {
-					if (this.debug) console.warn('levelManager.nextLevel fallo', e);
+					console.warn('❌ levelManager.nextLevel o loadLevel fallo', e);
 				}
 			} else {
-				if (this.debug) console.log('_goToNextLevel: Último nivel completado. Fin del juego.');
+				console.log('🏁 ¡Último nivel completado! Mostrando pantalla de fin del juego...');
 				// Lógica de "Ganaste" (Fin del juego)
 				if (this.experience && this.experience.tracker) {
+					console.log('📊 Deteniendo tracker y mostrando modal...');
 					const elapsed = this.experience.tracker.stop();
 					this.experience.tracker.saveTime(elapsed);
 					this.experience.tracker.showEndGameModal(elapsed);
-				} else if (this.debug) {
-					console.warn('_goToNextLevel: tracker no disponible');
+					console.log('✅ Modal de fin de juego mostrado');
+				} else {
+					console.warn('⚠️ tracker no disponible, mostrando alerta fallback');
+					alert('🏆 ¡Has completado todos los niveles!');
 				}
 			}
 		} catch (e) {
-			if (this.debug) console.warn('Error ejecutando lógica _goToNextLevel', e);
+			console.error('❌ Error ejecutando lógica _goToNextLevel:', e);
 		}
 	}
 
 
-	async handleChestCollect(prize) {
-      // --- CORRECCIÓN: Eliminado '|| prize.collected' ---
-      if (this.isLoadingLevel || !prize /* || prize.collected */) {
-          if (this.debug) console.log('[handleChestCollect] Ignorado por isLoadingLevel o !prize');
-          return;
-      }
+	
 
-      if (window.userInteracted && this.coinSound) {
-          this.coinSound.play();
-      }
-
-      console.log(`[handleChestCollect] ANTES de incrementar: collectedChests = ${this.collectedChests}`);
-      this.collectedChests++;
-      console.log(`[handleChestCollect] DESPUÉS de incrementar: collectedChests = ${this.collectedChests}`);
-
-      this._updateUI(); // Actualiza contador
-
-      if (this.debug) console.log(`📦 Cofre recogido! Total real: ${this.collectedChests}/${this.chestGoal}`);
-
-      // --- Lógica de Final de Nivel por Cofres (Nivel 2 y 3) ---
-      const currentLevel = this.levelManager.currentLevel; // Guardar nivel actual
-
-      // Verificar si se alcanzó la meta para el nivel actual (2 o 3)
-      let goalReached = false;
-      if (currentLevel == 2 && this.collectedChests >= this.chestGoal) {
-          goalReached = true;
-          if (this.debug) console.log('Meta de cofres Nivel 2 alcanzada!');
-      } else if (currentLevel == 3 && this.collectedChests >= this.chestGoal) {
-          goalReached = true;
-          if (this.debug) console.log('Meta de cofres Nivel 3 alcanzada!');
-      }
-
-      // La activación del portal ahora depende SOLO de las monedas (10), no de cofres.
-  }
+	increaseGhostSpeed(multiplier = 1.2) {
 
 
+
+
+	}
 
 
 	increaseGhostSpeed(multiplier = 1.2) {
@@ -677,9 +631,7 @@ export default class World {
 				if (this.debug) console.log(`increaseGhostSpeed: nueva velocidad ${enemy.speed.toFixed(2)}`);
 			}
 		});
-	}
-
-	toggleAudio() { this.ambientSound.toggle() }
+	}	toggleAudio() { this.ambientSound.toggle() }
 
 	update(delta) {
 		const deltaSeconds = (typeof delta === 'number' && delta > 0 && delta < 0.1) ? delta : 0.016; // Usa fallback si delta es inválido
@@ -689,8 +641,8 @@ export default class World {
 		if (this.gameStarted) {
 			this.enemies?.forEach(e => { try { e.update(deltaSeconds) } catch (err) { /* Ignora errores de update */ } });
 
-			// Lógica de Derrota (respeta invulnerabilidad del robot)
-			if (!this.defeatTriggered && !this.robot?.invulnerable) {
+			// Lógica de Derrota
+			if (!this.defeatTriggered) {
 				const distToClosest = this.enemies?.reduce((min, e) => {
 					if (!e?.body?.position || !this.robot?.body?.position) return min;
 					const d = e.body.position.distanceTo(this.robot.body.position);
@@ -698,7 +650,6 @@ export default class World {
 				}, Infinity) ?? Infinity;
 
 				if (distToClosest < 1.0) {
-					this.defeatTriggered = true;
 					this.defeatTriggered = true;
 					if (window.userInteracted && this.loseSound) this.loseSound.play();
 					const firstEnemy = this.enemies?.[0];
@@ -784,6 +735,18 @@ export default class World {
 			this.finalPrizes.forEach(p => { try { p.destroy?.() } catch (e) {} });
 			this.finalPrizes = [];
 		}
+		
+		// Limpiar haz de luz del portal si existe
+		if (this.portalBeacon) {
+			try {
+				this.portalBeacon.dispose();
+				this.portalBeacon = null;
+				if (this.debug) console.log('🔦 Haz de luz del portal eliminado');
+			} catch (e) {
+				if (this.debug) console.warn('Error al limpiar PortalBeacon', e);
+			}
+		}
+		
 		// Limpiar cofres/premios del loader
 		if (this.loader && this.loader.prizes && this.loader.prizes.length > 0) {
 			this.loader.prizes.forEach(prize => {
@@ -860,17 +823,52 @@ export default class World {
 
 	async loadLevel(level) {
     try {
-        if(this.debug) console.log(`--- Iniciando carga de Nivel ${level} ---`);
+        console.log(`🎮 ====== CARGANDO NIVEL ${level} ======`);
 
         // 1. LIMPIAR ESCENA ANTERIOR
         this.clearCurrentScene(); // Limpia objetos, física e intervalos
 
-        // 2. CARGAR DATOS DEL NIVEL
+        // 2. CARGAR MODELOS DEL NIVEL (LAZY LOADING)
+        console.log(`📦 Cargando modelos específicos del nivel ${level}...`);
+        try {
+            const levelSources = await getSourcesForLevel(level);
+            console.log(`📦 ${levelSources.length} modelos encontrados para nivel ${level}`);
+            
+            // Mostrar indicador de carga al usuario
+            if (this.experience.menu?.setStatus) {
+                this.experience.menu.setStatus(`⏳ Cargando nivel ${level}...`);
+            }
+            
+            // Cargar modelos del nivel con seguimiento de progreso
+            await this.experience.resources.loadAdditionalSources(levelSources);
+            console.log(`✅ Modelos del nivel ${level} cargados correctamente`);
+        } catch (loadError) {
+            console.error(`❌ Error cargando modelos del nivel ${level}:`, loadError);
+            // Continuar de todas formas, puede que algunos modelos ya estén cargados
+        }
+
+        // 3. CARGAR DATOS DEL NIVEL (BLOQUES Y CONFIGURACIÓN)
         const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
         const apiUrl = `${backendUrl}/api/blocks?level=${level}`;
+        const configUrl = `${backendUrl}/api/levels/config?level=${level}`;
         let data;
+        let levelConfig = null;
 
         try {
+            // Intentar cargar configuración del nivel desde API
+            console.log(`🔍 Intentando cargar configuración desde: ${configUrl}`);
+            try {
+                const configRes = await fetch(configUrl);
+                if (configRes.ok) {
+                    levelConfig = await configRes.json();
+                    console.log(`✅ Configuración del nivel ${level} cargada desde API:`, levelConfig);
+                } else {
+                    console.log(`⚠️ API respondió con status ${configRes.status}`);
+                }
+            } catch (configError) {
+                console.log(`⚠️ Error al cargar configuración: ${configError.message}`);
+            }
+
             // Intenta cargar desde API
             const res = await fetch(apiUrl);
             if (!res.ok) throw new Error(`Error API (${res.status})`);
@@ -881,40 +879,55 @@ export default class World {
             }
             data = await res.json();
             if (!data.blocks || data.blocks.length === 0) {
-                console.warn(`⚠️ API no devolvió bloques para el nivel ${level}. Forzando fallback a local.`);
                 throw new Error('API data vacía, usando fallback');
             }
             if (this.debug) console.log(`📦 Datos del nivel ${level} cargados desde API (${data.blocks.length} bloques).`);
         } catch (error) {
-            // Fallback a archivo local si falla la API
-            if (this.debug) console.warn(`⚠️ Usando datos locales para nivel ${level}... (${error.message})`);
+            // Fallback a archivo local si falla la API (silencioso, solo debug)
+            if (this.debug) console.log(`📁 Usando datos locales para nivel ${level}... (${error.message})`);
             const publicPath = (p) => {
                 const base = import.meta.env.BASE_URL || '/';
                 return `${base.replace(/\/$/, '')}/${p.replace(/^\//, '')}`;
             };
-            const localUrl = publicPath('data/toy_car_blocks.json');
+            const localUrl = publicPath(`data/toy_car_blocks${level}.json`);
             const localRes = await fetch(localUrl);
             if (!localRes.ok) throw new Error(`No se pudo cargar ${localUrl} (HTTP ${localRes.status})`);
             const allBlocks = await localRes.json();
             const filteredBlocks = allBlocks.filter(b => b.level == level); // Usa == por si level es string/number
-            console.log(`📦 [LOAD_LEVEL] Cargando Nivel ${level} (local). ${filteredBlocks.length} bloques encontrados.`);
+            if (this.debug) console.log(`📦 [LOAD_LEVEL] Cargando Nivel ${level} (local). ${filteredBlocks.length} bloques encontrados de ${allBlocks.length} totales.`);
+            if (this.debug && filteredBlocks.length > 0) {
+                console.log(`📦 [LOAD_LEVEL] Primer bloque del nivel ${level}:`, filteredBlocks[0]);
+            }
             data = {
                 blocks: filteredBlocks,
                 spawnPoint: filteredBlocks.find(b => b.role === 'spawnPoint') // Busca spawn point en los datos filtrados
             };
             // Define spawn points por defecto si no se encuentran en el JSON local
             if (!data.spawnPoint) {
-                if (level == 1) data.spawnPoint = { x: -17, y: 1.5, z: -67 };
-                else if (level == 2) data.spawnPoint = { x: 5, y: 1.5, z: 5 };
-                else if (level == 3) data.spawnPoint = { x: 10, y: 1.5, z: 10 }; // Spawn Nivel 3
-                else data.spawnPoint = { x: 0, y: 1.5, z: 0 }; // Fallback general
+                // Usar las mismas coordenadas para todos los niveles
+                data.spawnPoint = { x: -18, y: 1.5, z: 0 };
                  if (this.debug) console.log(`loadLevel: Usando spawnPoint por defecto para Nivel ${level}`);
             }
         }
 
         const spawnPoint = data.spawnPoint || { x: 0, y: 1.5, z: 0 }; // Asegura que siempre haya un spawnPoint
+        
+        // Escalar spawn point según el nivel para coincidir con el mundo escalado
+        if (level === 2) {
+            spawnPoint.x *= 15;
+            spawnPoint.y *= 15;
+            spawnPoint.z *= 15;
+        } else if (level === 3) {
+            spawnPoint.x *= 18;
+            spawnPoint.y *= 18;
+            spawnPoint.z *= 18;
+        } else {
+            spawnPoint.x *= 5;
+            spawnPoint.y *= 5; // Mantener altura normal del personaje
+            spawnPoint.z *= 5;
+        }
 
-        // 3. RESETEAR ESTADO DEL JUEGO
+        // 4. RESETEAR ESTADO DEL JUEGO
         this.points = 0; // Si usaras puntos
         this.collectedCoins = 0;
         if (this.robot) this.robot.points = 0; // Si el robot tuviera puntos
@@ -924,19 +937,28 @@ export default class World {
         this.finalPrizeCollected = false;
         this.collectedChests = 0;
 
-        // Establecer meta de cofres según el nivel
-        if (level == 3) {
-            this.chestGoal = 10;
-        } else if (level == 2) {
-            this.chestGoal = 3;
+        // Establecer meta de monedas según el nivel
+        // Primero intentar usar el valor de la configuración de la API
+        if (levelConfig && levelConfig.coinGoal) {
+            this.coinGoal = levelConfig.coinGoal;
+            console.log(`🎯 Meta de monedas desde API para Nivel ${level}: ${this.coinGoal}`);
         } else {
-            this.chestGoal = 0; // Nivel 1 no usa cofres
+            // Fallback a valores hardcodeados si no hay configuración
+            if (level == 1) {
+                this.coinGoal = 10;
+            } else if (level == 2) {
+                this.coinGoal = 15;
+            } else if (level == 3) {
+                this.coinGoal = 20;
+            } else {
+                this.coinGoal = 10; // Fallback
+            }
+            console.log(`🎯 Meta de monedas (fallback) para Nivel ${level}: ${this.coinGoal}`);
         }
-        if(this.debug) console.log(`loadLevel: Meta de cofres para Nivel ${level} establecida en ${this.chestGoal}`);
 
         this._updateUI(); // Actualiza UI con contadores reseteados y meta correcta
 
-        // 4. PROCESAR Y CARGAR BLOQUES (Geometría, Física, Cofres)
+        // 5. PROCESAR Y CARGAR BLOQUES (Geometría, Física, Cofres)
         if (data.blocks && data.blocks.length > 0) {
             const publicPath = (p) => {
               const base = import.meta.env.BASE_URL || '/';
@@ -959,7 +981,6 @@ export default class World {
         this.resetRobotPosition(spawnPoint);
         if (this.debug) console.log(`✅ Robot posicionado en spawn point: X=${spawnPoint.x.toFixed(2)}, Y=${spawnPoint.y.toFixed(2)}, Z=${spawnPoint.z.toFixed(2)}`);
 
-
         // --- AÑADIR RETRASO ---
         // Espera un breve momento (100ms) para que el motor de física procese la nueva posición del robot
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -977,39 +998,27 @@ export default class World {
             this.ghostSpawnInterval = setInterval(() => { if (this.levelManager.currentLevel == 1) this.spawnGhost(); }, 30000);
             this.ghostSpeedInterval = setInterval(() => { if (this.levelManager.currentLevel == 1) this.increaseGhostSpeed(1.3); }, 20000);
             this.spawnEnemies(1); // Enemigo inicial normal
-			// 6.1 Detección de proximidad al portal para avanzar sin necesidad de "recoger"
-            if (!this._portalProximityWatcher) {
-                this._portalProximityWatcher = true;
-                this.experience.time.on('tick', () => {
-                    try {
-                        // Funciona para cualquier nivel; si es último nivel no hace nada
-                        if (!this.finalPrizes || !this.finalPrizes.length) return;
-                        if (!this.robot?.body) return;
-                        const portalPrize = this.finalPrizes[0];
-                        const portalObj = portalPrize?.pivot || portalPrize?.model || portalPrize?.group;
-                        if (!portalObj) return;
-                        const dist = portalObj.position.distanceTo(this.robot.body.position);
-                        if (dist < 3 && !this.isLoadingLevel) {
-                            if (this.levelManager.currentLevel >= this.levelManager.totalLevels) return; // No avanzar si último nivel
-                            if (this.debug) console.log(`🚪 Portal activado por proximidad (nivel ${this.levelManager.currentLevel}, dist=${dist.toFixed(2)}) -> avanzando`);
-                            this.isLoadingLevel = true;
-                            this._goToNextLevel().finally(()=>{ this.isLoadingLevel = false; });
-                        }
-                    } catch(e) { /* Ignorar errores de tick portal */ }
-                });
-            }
         } else if (level == 2) {
-            console.log("📍 NIVEL 2: Spawneando 3 enemigos");
-            this.spawnIntelligentEnemies(3, 3.75); // 3 enemigos, velocidad x3.75 (2.5 * 1.5)
+            if (this.debug) console.log("loadLevel: Configurando spawners para Nivel 2 (Monedas y 3 Enemigos Rápidos)");
+            this.coinSpawnInterval = setInterval(() => {
+                if (this.levelManager.currentLevel == 2) { this.spawnCoin(3); }
+                else { clearInterval(this.coinSpawnInterval); this.coinSpawnInterval = null; }
+            }, 10000);
+            this.spawnIntelligentEnemies(3, 2.5); // 3 enemigos, velocidad x2.5
         } else if (level == 3) {
-            console.log("📍 NIVEL 3: Spawneando 5 enemigos");
-            this.spawnIntelligentEnemies(5, 5.25); // 5 enemigos, velocidad x5.25 (3.5 * 1.5)
+            if (this.debug) console.log("loadLevel: Configurando spawners para Nivel 3 (Monedas, Zombies y Giant Mutants)");
+            this.coinSpawnInterval = setInterval(() => {
+                if (this.levelManager.currentLevel == 3) { this.spawnCoin(3); }
+                else { clearInterval(this.coinSpawnInterval); this.coinSpawnInterval = null; }
+            }, 10000);
+            this.spawnMixedEnemies(2, 1); // 2 zombies normales + 1 giant mutant
         } else {
-             console.log(`📍 NIVEL ${level}: Sin enemigos (solo monedas)`);
+             if (this.debug) console.log(`loadLevel: No hay configuración de spawners para Nivel ${level}`);
         }
 
         this.gameStarted = true; // Activa la lógica de update (derrota, etc.)
-        if (this.debug) console.log(`--- Nivel ${level} cargado exitosamente ---`);
+        console.log(`✅ ====== NIVEL ${level} CARGADO EXITOSAMENTE ======`);
+        console.log(`📊 Estado: ${this.collectedCoins}/${this.coinGoal} monedas`);
 
     } catch (error) {
         console.error(`❌ Error MUY GRAVE cargando nivel ${level}:`, error);
@@ -1017,7 +1026,7 @@ export default class World {
     }
   }
 
-	resetRobotPosition(spawn = { x: 0, y: 1.5, z: 0 }) { // Spawn por defecto más seguro
+	resetRobotPosition(spawn = { x: -15, y: 1.5, z: 0 }) { // Spawn por defecto más seguro
 		if (!this.robot?.body || !this.robot?.group) {
 			if(this.debug) console.warn('resetRobotPosition: No se pudo resetear, robot no listo.');
 			return;

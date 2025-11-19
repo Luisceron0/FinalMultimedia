@@ -22,12 +22,8 @@ export default class Robot {
         this.groundCheckMargin = 0.12
 
         this.visualGroundOffset = 0
-        this.spawnPos = spawnPos || { x: 0, y: this.bodyRadius + 3, z: 0 } // Spawn más bajo y seguro
+        this.spawnPos = spawnPos || { x: 0, y: this.bodyRadius + 0.2, z: 0 }
         this.sprintMultiplier = 1.6
-
-        // Invulnerabilidad inicial (extendida para dar tiempo al jugador)
-        this.invulnerable = true
-        this.invulnerabilityTime = 5000 // 5 segundos de invulnerabilidad al inicio
 
         // Attack cooldown (segundos)
         this.attackCooldown = 0.5
@@ -94,15 +90,6 @@ export default class Robot {
         }
 
         this.physics.world.addBody(this.body)
-
-        // Mensaje visible de invulnerabilidad
-        console.log('🛡️✨ ROBOT INVULNERABLE por 5 segundos ✨🛡️')
-
-        // Desactivar invulnerabilidad después del tiempo establecido
-        setTimeout(() => {
-            this.invulnerable = false
-            console.log('⚠️ Invulnerabilidad del robot DESACTIVADA - ¡Ten cuidado!')
-        }, this.invulnerabilityTime)
 
         setTimeout(() => {
             if (this.body) this.body.wakeUp()
@@ -187,19 +174,11 @@ export default class Robot {
             act.loop = act.loop || THREE.LoopRepeat
         }
 
-        // Iniciar run por defecto o fallback (con peso 1) - esto evita quedarnos en T
-        if (this.animation.actions.run) {
-            const runAction = this.animation.actions.run
-            runAction.setLoop(THREE.LoopRepeat)
-            // NO llamar reset() a todas; reset solo en el action que vamos a reproducir directamente
-            runAction.reset()
-            try { runAction.setEffectiveWeight(1) } catch (e) { runAction.weight = 1 }
-            runAction.play()
-            this.animation.actions.current = runAction
-            if (this.debug) console.log('Robot: run iniciado por defecto')
-        } else if (this.animation.actions.idle) {
+        // Iniciar idle o fallback (con peso 1) - esto evita quedarnos en T
+        if (this.animation.actions.idle) {
             const idleAction = this.animation.actions.idle
             idleAction.setLoop(THREE.LoopRepeat)
+            // NO llamar reset() a todas; reset solo en el action que vamos a reproducir directamente
             idleAction.reset()
             try { idleAction.setEffectiveWeight(1) } catch (e) { idleAction.weight = 1 }
             idleAction.play()
@@ -214,7 +193,7 @@ export default class Robot {
             if (this.debug) console.log('Robot: fallback walking iniciado')
         } else {
             this.animation.actions.current = null
-            if (this.debug) console.warn('Robot: no se encontró run, idle ni walking; puede mostrarse pose T si no hay action activa')
+            if (this.debug) console.warn('Robot: no se encontró idle ni walking; puede mostrarse pose T si no hay action activa')
         }
 
         // Config especiales para jump / attack
@@ -392,9 +371,8 @@ export default class Robot {
             this.animation.play('jump')
         }
 
-        // Detectar caída fuera del mundo (muy abajo o muy arriba)
-        if (this.body.position.y < -20 || this.body.position.y > 100) {
-            console.warn('⚠️ Robot cayó fuera del mundo. Reubicando...')
+        if (this.body.position.y > 10) {
+            console.warn(' Robot fuera del escenario. Reubicando...')
             this.respawnAt(this.spawnPos.x, this.spawnPos.y, this.spawnPos.z)
         }
 
@@ -428,10 +406,9 @@ export default class Robot {
 
         if (currentAction !== attackAction) {
             if (isMoving) {
-                // Usar run por defecto cuando se mueve
-                if (this.animation.actions.run) {
+                if (sprintPressed && this.animation.actions.run) {
                     if (this.animation.actions.current !== this.animation.actions.run) this.animation.play('run', { fade: 0.18 })
-                } else if (this.animation.actions.walking) {
+                } else {
                     if (this.animation.actions.current !== this.animation.actions.walking) this.animation.play('walking', { fade: 0.18 })
                 }
             } else {
@@ -531,12 +508,6 @@ export default class Robot {
     }
 
     die() {
-        // No morir si está invulnerable
-        if (this.invulnerable) {
-            console.log('🛡️ ¡Robot protegido! El enemigo no puede matarte aún.')
-            return
-        }
-
         if (this.animation.actions.current !== this.animation.actions.death) {
             this.animation.actions.current.fadeOut(0.2)
             this.animation.actions.death.reset().fadeIn(0.2).play()

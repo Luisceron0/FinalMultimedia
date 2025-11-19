@@ -75,12 +75,6 @@ export default class Fox {
         this.animation.mixer = new THREE.AnimationMixer(this.model)
         this.animation.actions = {}
 
-        // ✅ Validar que existen animaciones antes de usarlas
-        if (!this.resource.animations || this.resource.animations.length < 3) {
-            console.warn('Fox: Animaciones no disponibles');
-            return;
-        }
-
         this.animation.actions.idle = this.animation.mixer.clipAction(this.resource.animations[0])
         this.animation.actions.walking = this.animation.mixer.clipAction(this.resource.animations[1])
         this.animation.actions.running = this.animation.mixer.clipAction(this.resource.animations[2])
