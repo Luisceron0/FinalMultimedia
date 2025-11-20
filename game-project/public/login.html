@@ -13,7 +13,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #f5f7fa;
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -23,49 +23,53 @@
 
         .login-container {
             background: white;
-            padding: 40px;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 400px;
+            padding: 50px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 420px;
             width: 100%;
+            border: 1px solid #e1e4e8;
         }
 
         .logo {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 35px;
         }
 
         .logo h1 {
-            color: #667eea;
-            font-size: 2rem;
-            margin-bottom: 10px;
+            color: #2c3e50;
+            font-size: 1.8rem;
+            margin-bottom: 8px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
         }
 
         .logo p {
-            color: #666;
+            color: #6c757d;
             font-size: 0.9rem;
         }
 
         .tabs {
             display: flex;
             margin-bottom: 30px;
-            border-bottom: 2px solid #f0f0f0;
+            border-bottom: 1px solid #e1e4e8;
         }
 
         .tab {
             flex: 1;
-            padding: 15px;
+            padding: 12px;
             text-align: center;
             cursor: pointer;
-            color: #999;
-            font-weight: 600;
-            transition: all 0.3s;
-            border-bottom: 3px solid transparent;
+            color: #6c757d;
+            font-weight: 500;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
+            font-size: 0.95rem;
         }
 
         .tab.active {
-            color: #667eea;
-            border-bottom: 3px solid #667eea;
+            color: #2c3e50;
+            border-bottom: 2px solid #2c3e50;
         }
 
         .form-container {
@@ -83,50 +87,51 @@
         label {
             display: block;
             margin-bottom: 8px;
-            color: #555;
+            color: #2c3e50;
             font-weight: 500;
             font-size: 0.9rem;
         }
 
         input {
             width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
+            padding: 11px 14px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
             font-size: 14px;
-            transition: all 0.3s;
+            transition: all 0.2s;
+            background: #ffffff;
         }
 
         input:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #495057;
+            box-shadow: 0 0 0 0.2rem rgba(44, 62, 80, 0.1);
         }
 
         button {
             width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 13px;
+            background: #2c3e50;
             color: white;
             border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
+            border-radius: 4px;
+            font-size: 15px;
+            font-weight: 500;
             cursor: pointer;
-            transition: transform 0.2s;
+            transition: background 0.2s;
             margin-top: 10px;
         }
 
         button:hover {
-            transform: translateY(-2px);
+            background: #1a252f;
         }
 
         button:active {
-            transform: translateY(0);
+            background: #0d1419;
         }
 
         button:disabled {
-            opacity: 0.5;
+            opacity: 0.6;
             cursor: not-allowed;
         }
 
@@ -142,15 +147,15 @@
         }
 
         .message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
         }
 
         .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef9a9a;
         }
 
         .loading {
@@ -164,8 +169,8 @@
         }
 
         .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
+            border: 3px solid #e1e4e8;
+            border-top: 3px solid #2c3e50;
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -180,7 +185,7 @@
 
         .info-text {
             text-align: center;
-            color: #999;
+            color: #6c757d;
             font-size: 0.85rem;
             margin-top: 20px;
         }
@@ -189,7 +194,7 @@
 <body>
     <div class="login-container">
         <div class="logo">
-            <h1>🎮 Juego 3D</h1>
+            <h1>Juego 3D</h1>
             <p>Inicia sesión para jugar y guardar tu progreso</p>
         </div>
 

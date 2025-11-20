@@ -6,8 +6,9 @@ from mathutils import Vector
 # -------- Configuraciones --------
 nivel = 1  # 🔵 Puedes cambiar a 2, 3, etc. para otros niveles
 
-# Rutas de exportación
-export_path = r"D:/UCC/React/PortafolioUCC/Projecto_final_v1/game-project/public/models/toycar2"
+# Rutas de exportación (usar ruta absoluta)
+base_path = r"C:\Users\labinf1.pasto\FinalMultimedia"
+export_path = os.path.join(base_path, "game-project", "public", "models", "toycar2")
 json_path = os.path.join(export_path, f"toy_car_blocks{nivel}.json")
 os.makedirs(export_path, exist_ok=True)
 

@@ -134,6 +134,28 @@ export default class CircularMenu {
     })
     document.body.appendChild(this.status)
 
+    // HUD: Nivel actual
+    this.levelLabel = document.createElement('div')
+    this.levelLabel.id = 'hud-level'
+    this.levelLabel.innerText = '🎮 Nivel: 1'
+    Object.assign(this.levelLabel.style, {
+      position: 'fixed',
+      top: '16px',
+      left: '16px',
+      fontSize: '18px',
+      fontWeight: 'bold',
+      background: 'rgba(0, 255, 247, 0.15)',
+      color: '#00fff7',
+      padding: '8px 16px',
+      borderRadius: '8px',
+      zIndex: 9999,
+      fontFamily: 'monospace',
+      border: '1px solid rgba(0, 255, 247, 0.3)',
+      boxShadow: '0 0 10px rgba(0, 255, 247, 0.3)',
+      pointerEvents: 'none'
+    })
+    document.body.appendChild(this.levelLabel)
+
     // HUD: Jugadores
 
     this.playersLabel = document.createElement('div')
@@ -141,8 +163,8 @@ export default class CircularMenu {
     this.playersLabel.innerText = '👥 Jugadores: 1'
     Object.assign(this.playersLabel.style, {
       position: 'fixed',
-      top: '16px',
-      left: '140px',
+      top: '50px',
+      left: '16px',
       fontSize: '16px',
       fontWeight: 'bold',
       background: 'rgba(0,0,0,0.6)',
@@ -233,6 +255,10 @@ export default class CircularMenu {
         })
       }
     })
+  }
+
+  setLevel(level) {
+    if (this.levelLabel) this.levelLabel.innerText = `🎮 Nivel: ${level}`
   }
 
   setStatus(text) {

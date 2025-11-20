@@ -64,11 +64,16 @@ export default class World {
 	 */
 	_updateUI() {
 		if (this.experience.menu?.setStatus) {
-			// Mostrar nivel y monedas con meta
-			let status = `🎮 Nivel: ${this.levelManager.currentLevel} | 🪙 Monedas: ${this.collectedCoins} / ${this.coinGoal}`;
+			// Mostrar monedas con meta
+			let status = `🪙 Monedas: ${this.collectedCoins} / ${this.coinGoal}`;
 
 			if (this.debug) console.log(`[_updateUI] Nivel actual: ${this.levelManager.currentLevel}, Monedas: ${this.collectedCoins}/${this.coinGoal}`);
 			this.experience.menu.setStatus(status);
+		}
+		
+		// Actualizar indicador de nivel en el HUD
+		if (this.experience.menu?.setLevel) {
+			this.experience.menu.setLevel(this.levelManager.currentLevel);
 		}
 	}
 

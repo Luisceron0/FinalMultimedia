@@ -260,7 +260,13 @@ export default class ToyCarLoader {
             if (block.level === 2) {
                 model.position.set(block.x * 15, block.y * 15, block.z * 15);
             } else if (block.level === 3) {
-                model.position.set(block.x * 20, block.y * 24, block.z * 20); // Nivel 3: 20x más grande
+                // Nivel 3: Aleatorizar X y Z, mantener Y constante
+                const randomOffsetX = (Math.random() - 0.5) * 800; // Rango de -400 a +400
+                const randomOffsetZ = (Math.random() - 0.5) * 800; // Rango de -400 a +400
+                const posX = (block.x * 20) + randomOffsetX;
+                const posY = block.y * 24; // Mantener Y constante
+                const posZ = (block.z * 20) + randomOffsetZ;
+                model.position.set(posX, posY, posZ);
             } else {
                 // Nivel 1: 20% más alto en Y (5 * 1.2 = 6)
                 model.position.set(block.x * 5, block.y * 6, block.z * 5);
