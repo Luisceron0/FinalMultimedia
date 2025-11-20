@@ -1,6 +1,6 @@
 // Enemy.js (Vite/ESM compatible, robusto para SkinnedMesh y visibilidad)
-import * as THREE from 'three'
 import * as CANNON from 'cannon-es'
+import * as THREE from 'three'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 import FinalPrizeParticles from '../Utils/FinalPrizeParticles.js'
 import Sound from './Sound.js'
@@ -92,7 +92,7 @@ export default class Enemy {
         // Contenedor que seguirá la física
         // -------------------------------
         this.container = new THREE.Group()
-        // Aplicar escala personalizada (para giant_mutant será 5 * 3 = 15)
+        // Aplicar escala personalizada
         const finalScale = 3 * this.customScale;
         this.container.scale.set(finalScale, finalScale, finalScale)
         this.container.position.copy(position)
@@ -112,7 +112,7 @@ export default class Enemy {
             const findClip = (names) => names.map(n => n.toLowerCase()).map(n => clips.find(c => c.name.toLowerCase() === n)).find(c => c)
             
             // Buscar animaciones, evitando static pose
-            const runClip = findClip(['giant run', 'giantrun', 'run', 'running', 'sprint', 'attack', 'bite'])
+            const runClip = findClip(['run', 'running', 'sprint', 'attack', 'bite'])
             const walkClip = findClip(['walk', 'walking', 'idle_walk', 'walkcycle', 'idle'])
             const deathClip = findClip(['death', 'die', 'dying', 'dead'])
 

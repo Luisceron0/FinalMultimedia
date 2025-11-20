@@ -1,21 +1,21 @@
 // World.js (Nivel 1 = Portal Central, Nivel 2 = Portal Central + Portal Cercano Lejano, Contadores, Portal Model)
 import * as THREE from 'three';
-import Environment from './Environment.js';
-import Fox from './Fox.js';
-import Robot from './Robot.js';
-import ToyCarLoader from '../../loaders/ToyCarLoader.js';
-import Floor from './Floor.js';
-import ThirdPersonCamera from './ThirdPersonCamera.js';
-import Sound from './Sound.js';
-import AmbientSound from './AmbientSound.js';
 import MobileControls from '../../controls/MobileControls.js';
-import LevelManager from './LevelManager.js';
+import ToyCarLoader from '../../loaders/ToyCarLoader.js';
+import { getSourcesForLevel } from '../sources.js';
 import FinalPrizeParticles from '../Utils/FinalPrizeParticles.js';
 import PortalBeacon from '../Utils/PortalBeacon.js';
-import Enemy from './Enemy.js';
 import Coin from './Coin.js';
+import Enemy from './Enemy.js';
+import Environment from './Environment.js';
+import Floor from './Floor.js';
+import Fox from './Fox.js';
+import LevelManager from './LevelManager.js';
 import Prize from './Prize.js';
-import { getSourcesForLevel } from '../sources.js';
+import ProceduralPortal from './ProceduralPortal.js';
+import Robot from './Robot.js';
+import Sound from './Sound.js';
+import ThirdPersonCamera from './ThirdPersonCamera.js';
 
 export default class World {
 	constructor(experience, { debug = false } = {}) {
@@ -190,12 +190,11 @@ export default class World {
 		if (this.debug) console.log(`spawnEnemies: se crearon ${this.enemies.length} enemigos`);
 	}
 
-	spawnMixedEnemies(zombieCount = 4, giantCount = 1) {
+	spawnMixedEnemies(zombieCount = 5) {
 		if (!this.robot?.body) { if (this.debug) console.warn('spawnMixedEnemies: robot no listo'); return }
 		const zombieResource = this.resources?.items?.zombieModel;
-		const giantMutantResource = this.resources?.items?.giantMutantModel;
-		if (!zombieResource || !giantMutantResource) { 
-			console.error('spawnMixedEnemies: modelos no encontrados'); 
+		if (!zombieResource) { 
+			console.error('spawnMixedEnemies: modelo zombie no encontrado'); 
 			return 
 		}
 
@@ -206,9 +205,9 @@ export default class World {
 		const minRadius = 30;
 		const maxRadius = 60;
 
-		// Spawnear zombies normales
+		// Spawnear zombies
 		for (let i = 0; i < zombieCount; i++) {
-			const angle = (i / (zombieCount + giantCount)) * Math.PI * 2;
+			const angle = (i / zombieCount) * Math.PI * 2;
 			const radius = minRadius + Math.random() * (maxRadius - minRadius);
 			const x = playerPos.x + Math.cos(angle) * radius;
 			const z = playerPos.z + Math.sin(angle) * radius;
@@ -229,32 +228,7 @@ export default class World {
 			this.enemies.push(enemy);
 		}
 
-		// Spawnear giant mutants (3x más grandes)
-		for (let i = 0; i < giantCount; i++) {
-			const angle = ((zombieCount + i) / (zombieCount + giantCount)) * Math.PI * 2;
-			const radius = minRadius + Math.random() * (maxRadius - minRadius);
-			const x = playerPos.x + Math.cos(angle) * radius;
-			const z = playerPos.z + Math.sin(angle) * radius;
-			const y = (playerPos.y ?? 1.5) + 7.0; // +3.0 más alto para evitar que atraviese el suelo
-			const spawnPos = new THREE.Vector3(x, y, z);
-
-			const enemy = new Enemy({
-				scene: this.scene,
-				physicsWorld: this.experience.physics?.world,
-				playerRef: this.robot,
-				model: giantMutantResource,
-				position: spawnPos,
-				experience: this.experience,
-				debug: this.debug,
-				scale: 3.0 // 3x más grande que zombie normal
-			});
-			enemy.isGiantMutant = true;
-			enemy.isGhost = false;
-			enemy.delayActivation = 1.0 + i * 0.5;
-			this.enemies.push(enemy);
-		}
-
-		if (this.debug) console.log(`spawnMixedEnemies: ${zombieCount} zombies + ${giantCount} giant mutants creados`);
+		if (this.debug) console.log(`spawnMixedEnemies: ${zombieCount} zombies creados`);
 	}
 
 	spawnIntelligentEnemies(count, speedMultiplier = 3.6) {
@@ -338,24 +312,9 @@ export default class World {
 		this._finalCoinMade = true; // Sigue siendo útil para Nivel 1
 		if (this.debug) console.log('activateFinalPrize: Creando el PORTAL FINAL en el centro.');
 
-		// --- USAR MODELO DE PORTAL ---
-		let prizeModelResource;
-		const portalModelResource = this.resources?.items?.portalModel;
-
-		if (!portalModelResource) {
-			if (this.debug) console.warn('activateFinalPrize: NO SE ENCONTRÓ portalModel. Usando fallback...');
-			prizeModelResource = (this.loader && this.loader.prizes && this.loader.prizes[0] && this.loader.prizes[0].model) || this.resources?.items?.coinModel;
-			if (!prizeModelResource) {
-				 if (this.debug) console.warn('activateFinalPrize: no hay ningún modelo de premio disponible');
-				 return;
-			}
-		} else {
-			 prizeModelResource = portalModelResource;
-			 if(this.debug) console.log('activateFinalPrize: Usando portalModel dedicado.');
-		}
-		// --- FIN: USAR MODELO DE PORTAL ---
-
+		// --- CREAR PORTAL PROCEDURAL ---
 		this.finalPrizes = this.finalPrizes || [];
+		this.proceduralPortals = this.proceduralPortals || [];
 
 		if (!this.finalPrizeLocations || !this.finalPrizeLocations.length) {
 			this.finalPrizeLocations = [{ x: 0, y: 1.5, z: 0 }]; // Ajusta Y si es necesario
@@ -363,8 +322,19 @@ export default class World {
 
 		this.finalPrizeLocations.forEach(loc => {
 			const pos = new THREE.Vector3(loc.x, loc.y, loc.z);
+			
+			// Crear portal procedural
+			const portal = new ProceduralPortal({
+				scene: this.scene,
+				position: pos
+			});
+			
+			this.proceduralPortals.push(portal);
+
+			// Crear un objeto Prize invisible para mantener la lógica de colisión
+			const dummyModel = { scene: new THREE.Group() }; // Modelo dummy invisible
 			const prize = new Prize({
-				model: prizeModelResource,
+				model: dummyModel,
 				position: pos,
 				scene: this.scene,
 				role: 'finalPrize',
@@ -372,7 +342,8 @@ export default class World {
 				robotRef: this.robot
 			});
 
-			if (prize.pivot) prize.pivot.visible = true;
+			// Hacer invisible el prize (usaremos el portal visual procedural)
+			if (prize.pivot) prize.pivot.visible = false;
 			this.finalPrizes.push(prize);
 
 			try {
@@ -424,20 +395,7 @@ export default class World {
 	spawnFinalPrizeNearPlayer() {
 		if (this.debug) console.log('spawnFinalPrizeNearPlayer: Creando portal final cerca del jugador (distancia ajustada)');
 
-		// --- USAR MODELO DE PORTAL ---
-		let prizeModelResource;
-		const portalModelResource = this.resources?.items?.portalModel;
-		if (!portalModelResource) {
-			if (this.debug) console.warn('spawnFinalPrizeNearPlayer: NO SE ENCONTRÓ portalModel. Usando fallback...');
-			prizeModelResource = (this.loader && this.loader.prizes && this.loader.prizes[0] && this.loader.prizes[0].model) || this.resources?.items?.coinModel;
-		} else {
-			prizeModelResource = portalModelResource;
-			if (this.debug) console.log('spawnFinalPrizeNearPlayer: Usando portalModel dedicado.');
-		}
-		if (!prizeModelResource) { if (this.debug) console.warn('spawnFinalPrizeNearPlayer: No hay modelo disponible.'); return; }
-		// --- FIN: USAR MODELO DE PORTAL ---
-
-		// 2. Obtener la posición
+		// 1. Obtener la posición
 		let spawnPos;
 		try {
 			const robotGroup = this.robot?.group;
@@ -458,9 +416,21 @@ export default class World {
 	} catch (e) {
 		if (this.debug) console.warn('Error posicionando portal final cercano, usando fallback', e);
 		spawnPos = new THREE.Vector3(this.robot.body.position.x + 5, (this.robot.body.position.y ?? 1.5) + 1, this.robot.body.position.z); // Fallback portal al lado
-	}		// 3. Crear el objeto Prize
+	}
+		
+		// 2. Crear portal procedural
+		const portal = new ProceduralPortal({
+			scene: this.scene,
+			position: spawnPos
+		});
+		
+		this.proceduralPortals = this.proceduralPortals || [];
+		this.proceduralPortals.push(portal);
+
+		// 3. Crear el objeto Prize invisible para mantener la lógica de colisión
+		const dummyModel = { scene: new THREE.Group() };
 		const prize = new Prize({
-			model: prizeModelResource,
+			model: dummyModel,
 			position: spawnPos,
 			scene: this.scene,
 			role: 'finalPrize',
@@ -468,7 +438,7 @@ export default class World {
 			robotRef: this.robot
 		});
 
-		if (prize.pivot) prize.pivot.visible = true;
+		if (prize.pivot) prize.pivot.visible = false; // Invisible, usamos el portal visual
 		this.finalPrizes = this.finalPrizes || [];
 		this.finalPrizes.push(prize);
 
@@ -554,16 +524,6 @@ export default class World {
 				// Crear portal cerca del jugador al alcanzar la décima moneda
 				if (!this._finalCoinMade && this.collectedCoins >= this.coinGoal) {
 					if (this.debug) console.log('Meta de monedas alcanzada -> Creando portal cerca del jugador');
-					
-					// Si estamos en nivel 3, reproducir animación de death en giant_mutants
-					if (this.levelManager?.currentLevel === 3) {
-						this.enemies?.forEach(enemy => {
-							if (enemy.isGiantMutant && typeof enemy.playDeath === 'function') {
-								enemy.playDeath();
-								if (this.debug) console.log('🧟 Giant Mutant ejecutando animación de muerte');
-							}
-						});
-					}
 					
 					this.spawnFinalPrizeNearPlayer(); // <-- Crea el portal cerca del jugador
 					this._finalCoinMade = true;
@@ -693,6 +653,13 @@ export default class World {
 			});
 		}
 
+		// Actualizar portales procedurales
+		if (this.proceduralPortals && this.proceduralPortals.length) {
+			this.proceduralPortals.forEach(portal => {
+				try { portal.update(deltaSeconds) } catch (e) { /* Ignora error */ }
+			});
+		}
+
 		// Actualizar cofres (Prizes del loader)
 		this.loader?.prizes?.forEach(p => { try { p.update?.(deltaSeconds) } catch (e) { /* Ignora error */ } });
 
@@ -734,6 +701,17 @@ export default class World {
 		if (this.finalPrizes && this.finalPrizes.length) {
 			this.finalPrizes.forEach(p => { try { p.destroy?.() } catch (e) {} });
 			this.finalPrizes = [];
+		}
+		
+		// Limpiar portales procedurales
+		if (this.proceduralPortals && this.proceduralPortals.length) {
+			this.proceduralPortals.forEach(portal => { 
+				try { portal.destroy() } catch (e) { 
+					if (this.debug) console.warn('Error al limpiar portal procedural', e);
+				} 
+			});
+			this.proceduralPortals = [];
+			if (this.debug) console.log('🌀 Portales procedurales eliminados');
 		}
 		
 		// Limpiar haz de luz del portal si existe
@@ -910,21 +888,28 @@ export default class World {
             }
         }
 
-        const spawnPoint = data.spawnPoint || { x: 0, y: 1.5, z: 0 }; // Asegura que siempre haya un spawnPoint
+        // Usar spawn point por defecto si no existe, SIN ESCALAR
+        let spawnPoint = data.spawnPoint || { x: 0, y: 1.5, z: 0 };
         
         // Escalar spawn point según el nivel para coincidir con el mundo escalado
-        if (level === 2) {
-            spawnPoint.x *= 15;
-            spawnPoint.y *= 15;
-            spawnPoint.z *= 15;
-        } else if (level === 3) {
-            spawnPoint.x *= 18;
-            spawnPoint.y *= 18;
-            spawnPoint.z *= 18;
+        // IMPORTANTE: Solo escalar si viene del JSON con coordenadas del modelo
+        if (data.spawnPoint) {
+            if (level === 2) {
+                spawnPoint = { x: spawnPoint.x * 15, y: spawnPoint.y * 15, z: spawnPoint.z * 15 };
+			} else if (level === 3) {
+				spawnPoint = { x: spawnPoint.x * 20, y: spawnPoint.y * 24, z: spawnPoint.z * 20 };
+            } else {
+                spawnPoint = { x: spawnPoint.x * 5, y: spawnPoint.y * 6, z: spawnPoint.z * 5 };
+            }
         } else {
-            spawnPoint.x *= 5;
-            spawnPoint.y *= 5; // Mantener altura normal del personaje
-            spawnPoint.z *= 5;
+            // Spawn points seguros por defecto para cada nivel (ya en coordenadas del mundo)
+            if (level === 2) {
+                spawnPoint = { x: 0, y: 3, z: 0 };
+            } else if (level === 3) {
+				spawnPoint = { x: -360, y: 3, z: 0 }; // Nivel 3: posición por defecto ajustada para escala 20x
+            } else {
+                spawnPoint = { x: -90, y: 1.5, z: 0 }; // Nivel 1
+            }
         }
 
         // 4. RESETEAR ESTADO DEL JUEGO
@@ -973,11 +958,13 @@ export default class World {
             } catch(e) { console.error('Error cargando precisePhysicsModels.json', e); }
 
             this.loader._processBlocks(data.blocks, preciseModels); // Crea objetos 3D, física estática y cofres
+            console.log(`📊 Objetos en escena después de _processBlocks: ${this.scene.children.length}`);
         } else {
             if (this.debug) console.warn(`No se encontraron bloques (blocks) para el nivel ${level} en los datos cargados.`);
         }
 
         // 5. COLOCAR AL JUGADOR
+        console.log(`🎯 SpawnPoint final para nivel ${level}: X=${spawnPoint.x.toFixed(2)}, Y=${spawnPoint.y.toFixed(2)}, Z=${spawnPoint.z.toFixed(2)}`);
         this.resetRobotPosition(spawnPoint);
         if (this.debug) console.log(`✅ Robot posicionado en spawn point: X=${spawnPoint.x.toFixed(2)}, Y=${spawnPoint.y.toFixed(2)}, Z=${spawnPoint.z.toFixed(2)}`);
 
@@ -1006,12 +993,12 @@ export default class World {
             }, 10000);
             this.spawnIntelligentEnemies(3, 2.5); // 3 enemigos, velocidad x2.5
         } else if (level == 3) {
-            if (this.debug) console.log("loadLevel: Configurando spawners para Nivel 3 (Monedas, Zombies y Giant Mutants)");
+            if (this.debug) console.log("loadLevel: Configurando spawners para Nivel 3 (Monedas y Zombies)");
             this.coinSpawnInterval = setInterval(() => {
                 if (this.levelManager.currentLevel == 3) { this.spawnCoin(3); }
                 else { clearInterval(this.coinSpawnInterval); this.coinSpawnInterval = null; }
             }, 10000);
-            this.spawnMixedEnemies(2, 1); // 2 zombies normales + 1 giant mutant
+            this.spawnMixedEnemies(3); // 3 zombies
         } else {
              if (this.debug) console.log(`loadLevel: No hay configuración de spawners para Nivel ${level}`);
         }

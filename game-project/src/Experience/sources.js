@@ -39,24 +39,14 @@ export default [
         path: '/models/Zombie/Zombie.glb'
     },
     {
-        name: 'giantMutantModel',
-        type: 'gltfModel',
-        path: '/models/Zombie/giant_mutant.glb'
-    },
-    {
         name: 'coinModel',
         type: 'gltfModel',
         path: '/models/Coin/Coin.glb'
-    },
-    {
-        name: 'portalModel',
-        type: 'gltfModel',
-        path: '/models/Portal/Portal.glb'
     }
 ]
 
 // Exportar función para obtener sources de un nivel específico
 export async function getSourcesForLevel(level) {
-    const module = await import(`../../../backend/data/sources_${level}.js`);
+    const module = await import(`../data/sources_${level}.js`);
     return module.default;
 }

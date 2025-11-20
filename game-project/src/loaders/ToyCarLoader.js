@@ -160,6 +160,9 @@ export default class ToyCarLoader {
     }
 
     _processBlocks(blocks, precisePhysicsModels) {
+        console.log(`🔧 _processBlocks: Procesando ${blocks.length} bloques`);
+        let modelsAdded = 0;
+        
         blocks.forEach(block => {
             if (!block.name) {
                 console.warn('Bloque sin nombre:', block);
@@ -170,15 +173,16 @@ export default class ToyCarLoader {
             const glb = this.resources.items[resourceKey];
 
             if (!glb) {
-                console.warn(`Modelo no encontrado: ${resourceKey}`);
+                console.warn(`❌ Modelo no encontrado: ${resourceKey} (nivel ${block.level})`);
                 return;
             }
 
             const model = glb.scene.clone();
+            modelsAdded++;
             if (block.level === 2) {
                 model.scale.set(15, 15, 15);
             } else if (block.level === 3) {
-                model.scale.set(5, 5, 5);
+                model.scale.set(20, 20, 20); // Nivel 3: escalado aumentado a 20x
             } else {
                 model.scale.set(5, 5, 5);
             }
@@ -225,9 +229,24 @@ export default class ToyCarLoader {
 
             // Si es un premio (coin)
             if (block.name.startsWith('coin')) {
+                let posX, posY, posZ;
+                if (block.level === 2) {
+                    posX = block.x * 15;
+                    posY = block.y * 15;
+                    posZ = block.z * 15;
+                } else if (block.level === 3) {
+                    posX = block.x * 20;
+                    posY = block.y * 24; // 20% más alto
+                    posZ = block.z * 20;
+                } else {
+                    posX = block.x * 5;
+                    posY = block.y * 6; // Nivel 1: 20% más alto
+                    posZ = block.z * 5;
+                }
+                
                 const prize = new Prize({
                     model, 
-                    position: new THREE.Vector3(block.x * 5, (block.y * 5), block.z * 5),
+                    position: new THREE.Vector3(posX, posY, posZ),
                     scene: this.scene,
                     role: block.role || "default",
                     robotRef: this.robotRef 
@@ -237,17 +256,21 @@ export default class ToyCarLoader {
                 return;
             }
 
-            // Ajustar altura según el nivel
+            // Ajustar posición según el nivel (debe coincidir con la escala del modelo)
             if (block.level === 2) {
                 model.position.set(block.x * 15, block.y * 15, block.z * 15);
             } else if (block.level === 3) {
-                model.position.set(block.x * 18, block.y * 18, block.z * 18); // x3 más grande
+                model.position.set(block.x * 20, block.y * 24, block.z * 20); // Nivel 3: 20x más grande
             } else {
                 // Nivel 1: 20% más alto en Y (5 * 1.2 = 6)
                 model.position.set(block.x * 5, block.y * 6, block.z * 5);
             }
 
             this.scene.add(model);
+            
+            if (block.level === 2 && modelsAdded <= 3) {
+                console.log(`📦 Nivel 2 - Modelo añadido: ${block.name} en pos (${model.position.x.toFixed(1)}, ${model.position.y.toFixed(1)}, ${model.position.z.toFixed(1)}) escala ${model.scale.x}x`);
+            }
 
             // Físicas (Solo para bloques estáticos)
             let shape;
@@ -283,5 +306,7 @@ export default class ToyCarLoader {
             body.userData.linkedModel = model;
             this.physics.world.addBody(body);
         });
+        
+        console.log(`✅ _processBlocks: ${modelsAdded} modelos añadidos a la escena`);
     }
 }

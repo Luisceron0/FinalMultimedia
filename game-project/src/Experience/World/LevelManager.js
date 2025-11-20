@@ -12,16 +12,9 @@ export default class LevelManager {
       this.currentLevel++;
       console.log(`➡️ Pasando al nivel ${this.currentLevel}`);
 
-      this.experience.world.clearCurrentScene();
-      
-      // ***** CORRECCIÓN CLAVE 2 *****
-      // Se usa await para ESPERAR a que la función async loadLevel termine
-      await this.experience.world.loadLevel(this.currentLevel);
-
-      // ***** CORRECCIÓN CLAVE 3 *****
-      // Se ELIMINA el setTimeout que reseteaba la posición,
-      // porque loadLevel(this.currentLevel) ya lo hace
-      // con el spawnPoint correcto.
+      // ***** CORRECCIÓN IMPORTANTE *****
+      // NO cargar el nivel aquí, solo incrementar el contador
+      // El nivel se cargará desde _goToNextLevel() para evitar doble carga
       
     } else {
       // 🔹 Si ya estás en el último nivel → termina el juego

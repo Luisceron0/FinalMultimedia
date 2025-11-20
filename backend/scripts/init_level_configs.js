@@ -26,7 +26,7 @@ async function initializeLevelConfigs() {
                 level: 3, 
                 coinGoal: 20, 
                 enemyCount: 3, 
-                description: 'Nivel 3 - Avanzado: Enfréntate al Giant Mutant' 
+                description: 'Nivel 3 - Avanzado: Mayor dificultad con enemigos inteligentes' 
             }
         ]
 
