@@ -182,7 +182,7 @@ export default class ToyCarLoader {
             if (block.level === 2) {
                 model.scale.set(15, 15, 15);
             } else if (block.level === 3) {
-                model.scale.set(20, 20, 20); // Nivel 3: escalado aumentado a 20x
+                model.scale.set(30, 30, 30); // Nivel 3: escalado aumentado a 30x
             } else {
                 model.scale.set(5, 5, 5);
             }
@@ -231,13 +231,16 @@ export default class ToyCarLoader {
             if (block.name.startsWith('coin')) {
                 let posX, posY, posZ;
                 if (block.level === 2) {
-                    posX = block.x * 15;
+                    // Aleatorizar X y Z manteniendo Y fijo
+                    const randomOffsetX = (Math.random() - 0.5) * 10;
+                    const randomOffsetZ = (Math.random() - 0.5) * 10;
+                    posX = block.x * 15 + randomOffsetX;
                     posY = block.y * 15;
-                    posZ = block.z * 15;
+                    posZ = block.z * 15 + randomOffsetZ;
                 } else if (block.level === 3) {
-                    posX = block.x * 20;
-                    posY = block.y * 24; // 20% más alto
-                    posZ = block.z * 20;
+                    posX = block.x * 50;
+                    posY = block.y * 36; // 20% más alto con escala 30x
+                    posZ = block.z * 50;
                 } else {
                     posX = block.x * 5;
                     posY = block.y * 6; // Nivel 1: 20% más alto
@@ -258,15 +261,16 @@ export default class ToyCarLoader {
 
             // Ajustar posición según el nivel (debe coincidir con la escala del modelo)
             if (block.level === 2) {
-                model.position.set(block.x * 15, block.y * 15, block.z * 15);
+                // Aleatorizar X y Z manteniendo Y fijo
+                const randomOffsetX = (Math.random() - 0.5) * 10;
+                const randomOffsetZ = (Math.random() - 0.5) * 10;
+                model.position.set(
+                    block.x * 15 + randomOffsetX, 
+                    block.y * 15, 
+                    block.z * 15 + randomOffsetZ
+                );
             } else if (block.level === 3) {
-                // Nivel 3: Aleatorizar X y Z, mantener Y constante
-                const randomOffsetX = (Math.random() - 0.5) * 800; // Rango de -400 a +400
-                const randomOffsetZ = (Math.random() - 0.5) * 800; // Rango de -400 a +400
-                const posX = (block.x * 20) + randomOffsetX;
-                const posY = block.y * 24; // Mantener Y constante
-                const posZ = (block.z * 20) + randomOffsetZ;
-                model.position.set(posX, posY, posZ);
+                model.position.set(block.x * 50, block.y * 36, block.z * 50); // Nivel 3: mayor separación
             } else {
                 // Nivel 1: 20% más alto en Y (5 * 1.2 = 6)
                 model.position.set(block.x * 5, block.y * 6, block.z * 5);

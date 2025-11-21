@@ -902,7 +902,7 @@ export default class World {
             if (level === 2) {
                 spawnPoint = { x: spawnPoint.x * 15, y: spawnPoint.y * 15, z: spawnPoint.z * 15 };
 			} else if (level === 3) {
-				spawnPoint = { x: spawnPoint.x * 20, y: spawnPoint.y * 24, z: spawnPoint.z * 20 };
+				spawnPoint = { x: spawnPoint.x * 50, y: spawnPoint.y * 36, z: spawnPoint.z * 50 };
             } else {
                 spawnPoint = { x: spawnPoint.x * 5, y: spawnPoint.y * 6, z: spawnPoint.z * 5 };
             }
@@ -911,7 +911,7 @@ export default class World {
             if (level === 2) {
                 spawnPoint = { x: 0, y: 3, z: 0 };
             } else if (level === 3) {
-				spawnPoint = { x: -360, y: 3, z: 0 }; // Nivel 3: posición por defecto ajustada para escala 20x
+				spawnPoint = { x: 0, y: 3, z: 0 }; // Nivel 3: jugador centrado en el mundo
             } else {
                 spawnPoint = { x: -90, y: 1.5, z: 0 }; // Nivel 1
             }
